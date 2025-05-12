@@ -1,0 +1,31 @@
+[project]
+name = "cmsaf-checker"
+description = "Checker for CM SAF data records."
+readme = "README.md"
+authors = [
+  {name = "Karsten Fennig"},
+]
+requires-python = ">= 3.10"
+version = "3.0.0"
+
+[project.scripts]
+cmsaf-checker = "cmsaf_checker.scripts.cli:main"
+
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2", 'setuptools_scm_git_archive']
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
+packages = [
+  "cmsaf_checker", "cmsaf_checker.share", "cmsaf_checker.scripts"
+]
+
+[tool.setuptools.package-dir]
+"cmsaf_checker" = "."
+"cmsaf_checker.share" = "share"
+"cmsaf_checker.scripts" = "scripts"
+
+[tool.setuptools.package-data]
+"*" = ["*.xml", "*.csv"]
+
