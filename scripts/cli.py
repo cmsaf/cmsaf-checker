@@ -1457,11 +1457,11 @@ class CMSAFChecker:
                     print(f"{'':<8}{RC_ERR} time record mismatch, expecting {timeStepFn.isoformat()} before first record")
                     rc = 1
 
-        # test records
-        if expRecords is not None:
-            if expRecords != tSteps.size:
-                print(f"{'':<8}{RC_ERR} Expecting {expRecords} records but found {tSteps.size}.")
-                rc = 1
+            # test records
+            if expRecords is not None:
+                if expRecords != tSteps.size:
+                    print(f"{'':<8}{RC_ERR} Expecting {expRecords} records but found {tSteps.size}.")
+                    rc = 1
 
         # test time bounds
         timeBoundsKey = "bounds"
