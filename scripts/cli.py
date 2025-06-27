@@ -1363,6 +1363,11 @@ class CMSAFChecker:
         timeCoverEnd = None
         calendar = "standard"
 
+        if hasattr(ds,"time_coverage_duration"):
+            timeDuration = decode_timeDuration(ds.time_coverage_duration)
+        else:
+            timeDuration = None
+
         # test axis attribute
         if not hasattr(timeC,"axis"):
             print(f"{'':<8}{RC_ERR} missing mandatory attribute 'axis'")
@@ -1647,7 +1652,16 @@ class CMSAFChecker:
                     print(f"{'':<8}{it.index+1: >3} {tSteps[it.index]} -> {itRc}")
 
                 if timeBounds is not None:
-                    prevTimeEnd = timeBounds[it.index,1]
+                    if timeBoundsKey != 'climatology':
+                        prevTimeEnd = timeBounds[it.index,1]
+                    elif timeDuration is not None:
+                        prevTimeEnd = datetime.datetime(
+                            year=timeBounds[it.index,1].year-max(int(timeDuration[0])-1,0),
+                            month=timeBounds[it.index,1].month-max(int(timeDuration[1])-1,0),
+                            day=timeBounds[it.index,1].day)
+                        prevTimeEnd -= datetime.timedelta(days=max(timeDuration[3]-1,0),
+                            hours=max(timeDuration[4]-1,0), minutes=max(timeDuration[5]-1,0),
+                            seconds=max(timeDuration[6]-1,0))
 
                 it.iternext()
 
