@@ -1531,7 +1531,7 @@ class CMSAFChecker:
                         expTimeBounds = False
 
                 if expTimeBounds:
-                    print("f{'':<8}{RC_ERR} Missing time bounds")
+                    print(f"{'':<8}{RC_ERR} Missing time bounds")
                     if not self.lazy:
                         rc = 1
                     else:
@@ -1853,8 +1853,8 @@ class CMSAFChecker:
                 leftMaxName = leftName+"most"
                 rightMaxName = rightName+"most"
 
-                print(f"{'':<8}[{bounds[0,0]} -> {bounds[-1,0]}] {leftName} bounds")
-                print(f"{'':<8}[{bounds[0,1]} -> {bounds[-1,1]}] {rightName} bounds")
+                print(f"{'':<8}[{bounds[0,0]!s} -> {bounds[-1,0]!s}] {leftName} bounds")
+                print(f"{'':<8}[{bounds[0,1]!s} -> {bounds[-1,1]!s}] {rightName} bounds")
 
                 # test coordinate within bounds
                 indx1 = np.where(bounds[:,0] > coord)[0]
@@ -1874,7 +1874,7 @@ class CMSAFChecker:
                 indx = np.where(tmp < 0)[0]
                 if (len(indx) > 0):
                     rc = 1
-                    print("{:<8}{RC_ERR} {longName} bounds overlap")
+                    print(f"{'':<8}{RC_ERR} {longName} bounds overlap")
 
                 # test bounds against global attribute
                 if (geoMinAttr is not None):
@@ -1888,9 +1888,9 @@ class CMSAFChecker:
 
             # print result
             if (coordRes is not None):
-                print(f"{'':<8}[{coordMin} -> {coordMax} by {coordRes}]")
+                print(f"{'':<8}[{coordMin!s} -> {coordMax!s} by {coordRes!s}]")
             else:
-                print(f"{'':<8}[{coordMin} -> {coordMax}]")
+                print(f"{'':<8}[{coordMin!s} -> {coordMax!s}]")
 
         return(rc)
 
