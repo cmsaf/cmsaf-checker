@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <cmsaf_metadata_standard xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
    <version_number>3.0</version_number>
-   <last_modified>2025-04-17</last_modified>
+   <last_modified>2025-06-27</last_modified>
    <institution>CM SAF</institution>
    <contact>karsten.fennig@dwd.de</contact>
 
@@ -193,7 +193,7 @@
    </entry>
 
    <entry id="source" type="s" required="yes" list=",">
-     <content>satellite</content>
+     <content>satellite observation</content>
    </entry>
 
    <entry id="lineage" type="s" required="yes">
