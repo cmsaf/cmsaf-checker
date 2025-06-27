@@ -1976,7 +1976,7 @@ class CMSAFChecker:
         listMan = ['long_name']
 
         # skip variables
-        listSkip = ['record_status', 'latlon_grid']
+        listSkip = ['record_status']
 
         # find coordinates
         axisLon  = ds.getCoordinates("longitude", shortName=["lon","longitude"])
@@ -1996,7 +1996,24 @@ class CMSAFChecker:
             else:
                 grp = ds
 
+            # test grid mapping variable
             if hasattr(var, 'grid_mapping_name'):
+
+                if var.grid_mapping_name == "latitude_longitude":
+                    if len(axisLat) == 0:
+                        print(f"{RC_ERR} missing required latitude coordinate")
+                        rc = 1
+                    if len(axisLon) == 0:
+                        print(f"{RC_ERR} missing required longitude coordinate")
+                        rc = 1
+
+                varGridMapping = grp.get_variables_by_attributes(grid_mapping_name=var.grid_mapping_name)
+                if len(varGridMapping) == 0:
+                    varGridMapping = ds.get_variables_by_attributes(grid_mapping_name=var.grid_mapping_name)
+                if len(varGridMapping) > 1:
+                    print(f"{RC_ERR} grid_mapping_name='{var.grid_mapping_name}' ambiguous")
+                    rc = 1
+
                 continue
 
             # find dimensions
@@ -2046,6 +2063,14 @@ class CMSAFChecker:
                 if (len(flagV) != len(flagM)):
                     rc = 1
                     print(f"{'':<4}{RC_ERR} {vName} :: mismatch between flag_values and flag_value")
+
+            # test grid mapping
+            if hasattr(var, 'grid_mapping'):
+                varGrid = ds.getVariableByName(var.grid_mapping)
+                if not ((os.path.join(grp.path,var.grid_mapping) in varGrid.keys()) or
+                       (os.path.join("/",var.grid_mapping) in varGrid.keys())):
+                    print(f"{RC_ERR} missing defined 'grid_mapping' variable '{var.grid_mapping}'")
+                    rc = 1
 
         # test variables defined in variable_id
         if hasattr(ds, 'variable_id'):
