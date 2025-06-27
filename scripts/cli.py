@@ -1371,10 +1371,10 @@ class CMSAFChecker:
         # test axis attribute
         if not hasattr(timeC,"axis"):
             print(f"{'':<8}{RC_ERR} missing mandatory attribute 'axis'")
-            rc = 1
+            rc = -1
         elif timeC.axis != "T":
             print(f"{'':<8}{RC_ERR} invalid value attribute 'axis={timeC.axis}'")
-            rc = 1
+            rc = -1
 
         # test for climate bounds
         if expClimate:
@@ -1720,11 +1720,11 @@ class CMSAFChecker:
         # test axis attribute
         if not hasattr(coordVar, "axis"):
             print(f"{'':<8}{RC_ERR} missing mandatory attribute 'axis'")
-            rc = 1
+            rc = -1
         elif (expAxis is not None):
             if coordVar.axis != expAxis:
                 print(f"{'':<8}{RC_ERR} invalid value attribute 'axis={coordVar.axis}'")
-                rc = 1
+                rc = -1
 
         # exclude from checks if not fixed
         if axisTime.name in coordVar.dimensions:
@@ -1732,7 +1732,7 @@ class CMSAFChecker:
             rc = 1
 
         # test axis values
-        if rc == 0:
+        if rc <= 0:
             coord = coordVar[:]
             coordOrder = 1
             if len(coord.shape) == 1:
