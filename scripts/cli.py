@@ -6,7 +6,7 @@ import glob
 import numpy as np
 import pytz, datetime
 
-__version__ = "3.0.2"
+__version__ = "3.0.3"
 __prefix__  = ""
 STANDARD = ''
 
@@ -424,6 +424,12 @@ class DatasetX(Dataset):
                 axis = self.getVariableByName(vName)
                 for item in axis.keys():
                     print (f"## WARNING ##: missing standard name attribute for '{item}'")
+        else:
+            for item in list(axis.keys()):
+                if hasattr(self[item],"long_name"):
+                    # filter sub satellite geolocation
+                    if re.match(r'^.*sub.satellite.*$', getattr(self[item],'long_name')):
+                        axis.pop(item)
 
         return(axis)
 
@@ -924,7 +930,7 @@ class CMSAFChecker:
                             hitsIndex = 0
                             for index, item in enumerate(std['content']):
                                 if attrHits[hitsIndex+index] == 0:
-                                    print(f"{RC_ERR}missing required specific attribute content :: '{item['value']}'")
+                                    print(f"{RC_ERR} missing required specific attribute content :: '{item['value']}'")
                                     keyRc = 1
                                     self.err += 1
                                     if key not in self.errAttr:
@@ -1194,8 +1200,12 @@ class CMSAFChecker:
         print("\nrecord_status")
 
         if len(tmp) == 0:
-            print(f"{RC_ERR} missing record_status variable")
-            tests['record_status'] = 1
+            if ds.isSwathData():
+                print(f"{RC_INFO} record_status variable not required for 'swath' data")
+                tests['record_status'] = 0
+            else:
+                print(f"{RC_ERR} missing record_status variable")
+                tests['record_status'] = 1
         else:
             tests['record_status'] = 0
 
@@ -1408,6 +1418,7 @@ class CMSAFChecker:
                 axisTmp = np.empty(2, dtype=timeC.dtype)
                 axisTmp[0] = timeC[0]
                 axisTmp[1] = timeC[-1]
+                print(f"{'':<8}{RC_INFO} checking only first an last record for swath data.")
 
             try:
                 tSteps = np.empty(axisTmp.shape, dtype=datetime.datetime)
@@ -1719,17 +1730,17 @@ class CMSAFChecker:
 
         # test axis attribute
         if not hasattr(coordVar, "axis"):
-            print(f"{'':<8}{RC_ERR} missing mandatory attribute 'axis'")
-            rc = -1
+            # exclude from checks if not fixed
+            if axisTime.name in coordVar.dimensions:
+                print(f"{'':<4}{RC_INFO} coordinate is not fixed in time")
+                rc = 10
+            else:
+                print(f"{'':<8}{RC_ERR} missing mandatory attribute 'axis'")
+                rc = -1
         elif (expAxis is not None):
             if coordVar.axis != expAxis:
                 print(f"{'':<8}{RC_ERR} invalid value attribute 'axis={coordVar.axis}'")
                 rc = -1
-
-        # exclude from checks if not fixed
-        if axisTime.name in coordVar.dimensions:
-            print(f"{'':<4} not fixed")
-            rc = 1
 
         # test axis values
         if rc <= 0:
@@ -1906,6 +1917,7 @@ class CMSAFChecker:
             else:
                 print(f"{'':<8}[{coordMin!s} -> {coordMax!s}]")
 
+        rc = 0 if rc>=10 else rc
         return(rc)
 
 
@@ -1917,23 +1929,38 @@ class CMSAFChecker:
         rc = 0
         ds = self.Dataset
 
+        # find time coordinate
+        axisTime = ds.getCoordinates("time", shortName=["time"])
+
         if (ds.data_model == "NETCDF4") or (ds.data_model == "NETCDF4_CLASSIC"):
             vList = ds.getVariableList()
+            vFilter = []
 
-            for vName in vList:
-                if (len(ds[vName].shape) >= 3):
+            # filter variables to test
+            if ds.isSwathData():
+                for vName in vList:
+                    aTime = None
+                    for dim in ds[vName].get_dims():
+                        aTime = ds.matchCoordinate(dim, axisTime)
+                        if aTime is not None: break
+                    if aTime is not None: vFilter.append(vName)
+            else:
+                for vName in vList:
+                    if len(ds[vName].shape) >= 3: vFilter.append(vName)
+
+            for vName in vFilter:
+                xRc = 1
+                filters = ds[vName].filters()
+                if filters is None:
                     xRc = 1
-                    filters = ds[vName].filters()
-                    if filters is None:
-                        xRc = 1
-                    else:
-                        if 'zlib' in filters:
-                            if filters['zlib']:
-                                print(f"{vName:<15} level={filters['complevel']}")
-                                if filters['complevel'] > 0: xRc = 0
-                    if xRc == 1:
-                        rc = 1
-                        print(f"{RC_ERR} Variable {vName} is not compressed.")
+                else:
+                    if 'zlib' in filters:
+                        if filters['zlib']:
+                            print(f"{vName:<15} level={filters['complevel']}")
+                            if filters['complevel'] > 0: xRc = 0
+                if xRc == 1:
+                    rc = 1
+                    print(f"{RC_ERR} Variable {vName} is not compressed.")
 
         else:
             rc = 1
@@ -1971,6 +1998,7 @@ class CMSAFChecker:
         # recommended attributes
         listRec = ['units', 'standard_name', 'grid_mapping']
         listRecAxis = ['grid_mapping']
+        listRecSwath = ['grid_mapping']
 
         # mandatory attributes
         listMan = ['long_name']
@@ -2043,6 +2071,8 @@ class CMSAFChecker:
                     itRc = 0
                 elif item in listRecAxis and vName in axisLat:
                     itRc = 0
+                elif item in listRecSwath and ds.isSwathData():
+                    itRc = 0
                 elif not hasattr(var, item):
                     itRc = 1
                     for gvName in grp.variables:
@@ -2052,6 +2082,7 @@ class CMSAFChecker:
                             break
                 if (itRc == 1):
                     if item in listMan:
+                        rc = 1
                         print(f"{'':<4}{RC_ERR} {vName} :: missing mandatory attribute '{item}'")
                     elif item in listRec:
                         print(f"{'':<4}{RC_WARN} {vName} :: missing recommended attribute '{item}'")

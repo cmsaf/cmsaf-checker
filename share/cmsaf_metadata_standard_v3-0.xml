@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <cmsaf_metadata_standard xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
    <version_number>3.0</version_number>
-   <last_modified>2025-06-27</last_modified>
+   <last_modified>2025-07-02</last_modified>
    <institution>CM SAF</institution>
    <contact>karsten.fennig@dwd.de</contact>
 
@@ -79,6 +79,7 @@
    <entry id="references" type="s" required="yes">
      <regex>^https://doi\.org/10\.5676/(EUM_SAF_CM|DWD)/[0-9A-Z_/-]+$</regex>
      <regex>^https://wui\.cmsaf\.eu/safira/action/viewICDRDetails\?acronym\=[0-9A-Z_]+_ICDR$</regex>
+     <regex>^https://www\.cmsaf\.eu/SharedDocs/Literatur/document/.*__blob=publicationFile$</regex>
    </entry>
 
    <entry id="Conventions" type="s" required="yes" list="," join="and">
