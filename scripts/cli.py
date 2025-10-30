@@ -564,7 +564,6 @@ class CMSAFChecker:
                 else:
                     self.gIgnoreAtt.append(att)
 
-
     def __del__(self):
         if (self.refDataset):
             self.refDataset.close();
@@ -2273,6 +2272,11 @@ def main():
             res['FAILED'] += 1
             rcMsg = RC_FAIL
         print(f"\n{'':-^80}\n{rcMsg} <<< result for {file}\n{'':-^80}")
+
+    # close reference file
+    if inst.refDataset is not None:
+        inst.refDataset.close();
+        inst.refDataset = None
 
     # final result
     print(f"\n{'':=^80}\nOverall Summary\n{'':=^80}")
