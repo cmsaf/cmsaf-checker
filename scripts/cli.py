@@ -833,13 +833,19 @@ class CMSAFChecker:
                         if not validIndex == None:
                             attrHits[validIndex] += 1
                         else:
-                            print(f"{RC_ERR} incorrect attribute content :: '{a}'")
-                            if len(std['content']) == 1:
-                                print(f"Expecting: '{std['content'][0]['value']}'")
-                            keyRc = 1
-                            self.err += 1
-                            if key not in self.errAttr:
-                                self.errAttr.append(key)
+                            if key in self.gIgnoreAtt:
+                                print(f"{RC_INFO} Ignoring incorrect attribute content '{key}'")
+                                self.info += 1
+                                if key not in self.infoAttr:
+                                    self.infoAttr.append(key)
+                            else:
+                                print(f"{RC_ERR} incorrect attribute content :: '{a}'")
+                                if len(std['content']) == 1:
+                                    print(f"Expecting: '{std['content'][0]['value']}'")
+                                keyRc = 1
+                                self.err += 1
+                                if key not in self.errAttr:
+                                    self.errAttr.append(key)
 
                     # check attribute content with regular expression
                     hitsIndex += len(std['content'])
@@ -859,11 +865,17 @@ class CMSAFChecker:
                         if not validIndex == None:
                             attrHits[validIndex] += 1
                         else:
-                            print(f"{RC_ERR} incorrect attribute content :: '{a}'")
-                            keyRc = 1
-                            self.err += 1
-                            if key not in self.errAttr:
-                                self.errAttr.append(key)
+                            if key in self.gIgnoreAtt:
+                                print(f"{RC_INFO} Ignoring incorrect attribute content '{key}'")
+                                self.info += 1
+                                if key not in self.infoAttr:
+                                    self.infoAttr.append(key)
+                            else:
+                                print(f"{RC_ERR} incorrect attribute content :: '{a}'")
+                                keyRc = 1
+                                self.err += 1
+                                if key not in self.errAttr:
+                                    self.errAttr.append(key)
 
                     # check keyword list
                     hitsIndex += len(std['regex'])
