@@ -489,9 +489,10 @@ class CMSAFChecker:
     """
 
     def __init__(self, metadataStandards=None, version=None, referenceFile=None,
-        coordinates=False, ignore=None, lazy=False):
+        coordinates=False, ignore=None, lazy=False, standard_file=None):
 
         self.metadataStandards = metadataStandards
+        self.standard_file     = standard_file
         self.Dataset           = None
         self.testFn            = None
         self.refFile           = referenceFile
@@ -526,11 +527,32 @@ class CMSAFChecker:
             parser.setFeature(feature_namespaces, 0)
             self.std_name_dh = CMSAFStandard()
             parser.setContentHandler(self.std_name_dh)
-            fn=self.metadataStandards
-            if (os.path.isdir(fn)):
-                fn = fn+"/cmsaf_metadata_standard"+self.version+".xml"
-            else:
-                self.metadataStandards = STANDARD
+
+            # find given standards file
+            fn = None
+            if self.standard_file is not None:
+                if os.path.isfile(self.standard_file):
+                    fn = self.standard_file
+                if fn is None:
+                    if os.path.isdir(self.metadataStandards):
+                        tmp = os.path.join(self.metadataStandards,self.standard_file)
+                        if os.path.isfile(tmp):
+                            fn = tmp
+                if fn is None:
+                    print(f"Could not find '{self.standard_file}'")
+                    exit(1)
+                else:
+                    print(f"Using standard file: '{fn}'")
+
+            # find default standards file
+            if fn is None:
+                fn = self.metadataStandards
+                if (os.path.isdir(fn)):
+                    fn = fn+"/cmsaf_metadata_standard"+self.version+".xml"
+                else:
+                    self.metadataStandards = STANDARD
+
+            # read standard files
             try:
                 parser.parse(fn)
             except IOError as detail:
@@ -539,11 +561,22 @@ class CMSAFChecker:
 
             # read included file
             if (hasattr(self.std_name_dh, 'include')):
-                print (f"Including {self.std_name_dh.include}.")
+                fn = self.std_name_dh.include
+                if not os.path.isfile(fn):
+                    fn = os.path.join(self.metadataStandards, self.std_name_dh.include)
+                    if not os.path.isfile(fn):
+                        fn = None
+
+                if fn is None:
+                    print (f"No such file '{self.std_name_dh.include}'.")
+                    exit (1)
+                else:
+                    print (f"Including '{fn}'.")
+
                 include_ = CMSAFStandard()
                 parser.setContentHandler(include_)
                 try:
-                    parser.parse(self.std_name_dh.include)
+                    parser.parse(fn)
                 except IOError as detail:
                     print (detail)
                     raise
@@ -2181,6 +2214,8 @@ def main():
         default=STANDARD, help='location of the CM SAF Metadata Standards')
     parser.add_argument('-v', '--version',
         help='CM SAF standards version to apply')
+    parser.add_argument('-f', '--standard_file',
+        help='Test files using this as the reference')
     parser.add_argument('-r', '--reference',
         help='Test files using this as the reference')
     parser.add_argument('-i', '--ignore_attr',
@@ -2200,10 +2235,12 @@ def main():
     # get a new checker object
     if (args.reference == None):
         inst = CMSAFChecker(metadataStandards=args.cmsaf_metadata_standard, version=args.version,
-            coordinates=args.coordinates, lazy=args.lazy, ignore=args.ignore_attr)
+            coordinates=args.coordinates, lazy=args.lazy, ignore=args.ignore_attr,
+            standard_file=args.standard_file)
     else:
         inst = CMSAFChecker(referenceFile=args.reference, ignore=args.ignore_attr,
-            coordinates=args.coordinates, lazy=args.lazy)
+            coordinates=args.coordinates, lazy=args.lazy,
+            standard_file=args.standard_file)
 
     if (inst.refDataset == None):
         print(f"Using CM SAF Metadata Standard Version {inst.std_name_dh.version_number} ({inst.std_name_dh.last_modified})")
