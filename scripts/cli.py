@@ -2030,6 +2030,10 @@ class CMSAFChecker:
         # mandatory attributes
         listMan = ['long_name']
 
+        # items to ignore
+        listManSkip = {'cell_index': ['long_name']}
+        listRecSkip = {'cell_index': ['grid_mapping']}
+
         # skip variables
         listSkip = ['record_status']
 
@@ -2107,11 +2111,16 @@ class CMSAFChecker:
                         if (hasattr(gv, 'bounds') and gv.bounds == vNameB):
                             itRc = 0
                             break
+                        if (hasattr(gv, 'climatology') and gv.climatology == vNameB):
+                            itRc = 0
+                            break
                 if (itRc == 1):
-                    if item in listMan:
+                    xList = listManSkip[vNameB] if vNameB in listManSkip else []
+                    if item in listMan and item not in xList:
                         rc = 1
                         print(f"{'':<4}{RC_ERR} {vName} :: missing mandatory attribute '{item}'")
-                    elif item in listRec:
+                    xList = listRecSkip[vNameB] if vNameB in listRecSkip else []
+                    if item in listRec and item not in xList:
                         print(f"{'':<4}{RC_WARN} {vName} :: missing recommended attribute '{item}'")
 
             # test flags
