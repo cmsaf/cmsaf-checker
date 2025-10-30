@@ -1829,9 +1829,9 @@ class CMSAFChecker:
                     eps      = float_spacing(meshExp, coord)
                     indx     = np.where(tmp > eps)[0]
                     if (len(indx) > 0):
-                        print("f{'':<8}{RC_ERR} at {len(indx)} locations:")
-                        print("f{'':<10}found:    {coord[indx]}")
-                        print("f{'':<10}expecting:{meshExp[indx]}")
+                        print(f"{'':<8}{RC_ERR} at {len(indx)} locations:")
+                        print(f"{'':<10}found:    {coord[indx]}")
+                        print(f"{'':<10}expecting:{meshExp[indx]}")
                         if (not self.lazy):
                             rc = 1
                         else:
