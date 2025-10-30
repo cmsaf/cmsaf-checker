@@ -337,20 +337,36 @@ class Keywords:
         return kwList
 
 
-class DatasetX(Dataset):
+class DatasetX():
     """
     Expand standard python Dataset netcdf4 class
     """
 
     def __init__(self, *args, **kwargs):
-       Dataset.__init__(self, *args, **kwargs)
+        self._ds = Dataset(*args, **kwargs);
 
 
     def __getattribute__(self, item):
-        if item == "__dict__":
-            return Dataset.__getattr__(self, item)
+        if item in ["_ds", "getCoordinates", "getVariableByStandardName", "getVariableList", "isSwathData",
+                "matchCoordinate", "matchCoordinateTime", "getVariableByName", "getvar", "getgrp"]:
+            return object.__getattribute__(self, item)
+        elif item == "ds":
+            return object.__getattribute__(self, "_ds")
         else:
-            return Dataset.__getattribute__(self, item)
+            return Dataset.__getattribute__(self._ds, item)
+
+
+    def getvar(self, name):
+        return self._ds[name]
+
+
+    def getgrp(self, name):
+        return self._ds[name]
+
+
+    def close(self):
+        if self._ds.isopen():
+            self._ds.close()
 
 
     def isSwathData(self):
@@ -389,7 +405,7 @@ class DatasetX(Dataset):
 
         for item in self.getVariableList():
             if (os.path.basename(item) == name):
-                result[item] = self[item]
+                result[item] = self._ds[item]
 
         return result
 
@@ -426,9 +442,9 @@ class DatasetX(Dataset):
                     print (f"## WARNING ##: missing standard name attribute for '{item}'")
         else:
             for item in list(axis.keys()):
-                if hasattr(self[item],"long_name"):
+                if hasattr(self._ds[item],"long_name"):
                     # filter sub satellite geolocation
-                    if re.match(r'^.*sub.satellite.*$', getattr(self[item],'long_name')):
+                    if re.match(r'^.*sub.satellite.*$', getattr(self._ds[item],'long_name')):
                         axis.pop(item)
 
         return(axis)
@@ -1489,10 +1505,10 @@ class CMSAFChecker:
             tmp = getattr(timeC,timeBoundsKey)
             if timeC.group().name == "/":
                 if tmp in ds.variables:
-                    timeBoundsVar = ds[tmp]
+                    timeBoundsVar = ds.getvar(tmp)
             else:
-                if tmp in ds[timeC.group().path].variables:
-                    timeBoundsVar = ds[os.path.join(timeC.group().path,tmp)]
+                if tmp in ds.getgrp(timeC.group().path).variables:
+                    timeBoundsVar = ds.getvar(os.path.join(timeC.group().path,tmp))
             if timeBoundsVar is None:
                 print(f"{'':<8}{RC_ERR} Missing configured bounds variable '{tmp}'.")
                 rc = 1
@@ -1852,10 +1868,10 @@ class CMSAFChecker:
                 tmp = getattr(coordVar,boundsKey)
                 if coordVar.group().name == "/":
                     if tmp in ds.variables:
-                        boundsVar = ds[tmp]
+                        boundsVar = ds.getvar(tmp)
                 else:
-                    if tmp in ds[coordVar.group().path].variables:
-                        boundsVar = ds[coordVar.group().path].variables[tmp]
+                    if tmp in ds.getgrp(coordVar.group().path).variables:
+                        boundsVar = ds.getgrp(coordVar.group().path).variables[tmp]
                 if boundsVar is not None:
                     if (coordOrder == 1):
                         bounds = boundsVar[:]
@@ -1940,17 +1956,17 @@ class CMSAFChecker:
             if ds.isSwathData():
                 for vName in vList:
                     aTime = None
-                    for dim in ds[vName].get_dims():
+                    for dim in ds.getvar(vName).get_dims():
                         aTime = ds.matchCoordinate(dim, axisTime)
                         if aTime is not None: break
                     if aTime is not None: vFilter.append(vName)
             else:
                 for vName in vList:
-                    if len(ds[vName].shape) >= 3: vFilter.append(vName)
+                    if len(ds.getvar(vName).shape) >= 3: vFilter.append(vName)
 
             for vName in vFilter:
                 xRc = 1
-                filters = ds[vName].filters()
+                filters = ds.getvar(vName).filters()
                 if filters is None:
                     xRc = 1
                 else:
@@ -2018,11 +2034,11 @@ class CMSAFChecker:
                 continue
 
             print(vName)
-            var = ds[vName]
+            var = ds.getvar(vName)
             if var.group().name != "/":
                 grp = ds.groups[var.group().name]
             else:
-                grp = ds
+                grp = ds.ds
 
             # test grid mapping variable
             if hasattr(var, 'grid_mapping_name'):
@@ -2108,7 +2124,7 @@ class CMSAFChecker:
             print(f"\nvariable_id :: '{ds.variable_id}'")
             for item in ds.variable_id.split(","):
                 try:
-                    var = ds[item]
+                    var = ds.getvar(item)
                 except:
                     rc = 1
                     print(f"{'':<4}{RC_ERR} missing variable '{item}'")
