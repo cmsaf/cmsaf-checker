@@ -16,6 +16,8 @@ options:
                         location of the CM SAF Metadata Standards
   -v, --version VERSION
                         CM SAF standards version to apply
+  -f, --standard_file STANDARD_FILE
+                        Test files using this as the CM SAF Metadata Standard
   -r, --reference REFERENCE
                         Test files using this as the reference
   -i, --ignore_attr IGNORE_ATTR
