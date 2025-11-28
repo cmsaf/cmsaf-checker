@@ -6,7 +6,7 @@ import glob
 import numpy as np
 import pytz, datetime
 
-__version__ = "3.1.0"
+__version__ = "3.1.1"
 __prefix__  = ""
 STANDARD = ''
 
