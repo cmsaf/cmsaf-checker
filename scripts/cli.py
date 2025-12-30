@@ -1448,7 +1448,7 @@ class CMSAFChecker:
 
         # test for climate bounds
         if expClimate:
-            if not hasattr(timcC,'climatology'):
+            if not hasattr(timeC,'climatology'):
                 print(f"{'':<8}{RC_WARN} Expecting attribute 'climatology' as attribute for time bounds time")
 
         # decode time record in file
