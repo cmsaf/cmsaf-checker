@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from netCDF4 import Dataset, num2date
 from astropy.time import Time
+from dateutil.relativedelta import relativedelta
+import calendar as cal
 import re, string, types, csv, os.path
 import glob
 import numpy as np
@@ -1437,6 +1439,10 @@ class CMSAFChecker:
             timeDuration = decode_timeDuration(ds.time_coverage_duration)
         else:
             timeDuration = None
+        if hasattr(ds, "time_coverage_resolution"):
+            timeResolution = decode_timeDuration(ds.time_coverage_resolution)
+        else:
+            timeResolution = None
 
         # test axis attribute
         if not hasattr(timeC,"axis"):
@@ -1618,10 +1624,11 @@ class CMSAFChecker:
         # loop records
         if tSteps is not None:
             print("")
-            prevTimeEnd = None
-            itRecord    = tSteps[0]
-            nRecord     = None
-            it          = np.nditer(tSteps, flags=['c_index','refs_ok'])
+            prevTimeEnd    = None
+            timeBoundRight = None
+            itRecord       = tSteps[0]
+            nRecord        = None
+            it             = np.nditer(tSteps, flags=['c_index','refs_ok'])
             while not it.finished:
                 itRc = 'OK'
                 itRecStatus = None
@@ -1668,17 +1675,51 @@ class CMSAFChecker:
                         print(f"{'':<8}{RC_ERR} invalid record_status value [{recordStatusValC}]")
                         itRecStatus = None
 
+                # define timeBoundRight and adjust if climatology is defined
+                if timeBounds is not None:
+                    timeBoundRight = timeBounds[it.index,1]
+                    if timeBoundsKey == 'climatology' and timeDuration is not None:
+                        lb = timeBounds[it.index,0]
+                        lb = datetime.datetime(year=lb.year, month=lb.month, day=lb.day,
+                                hour=lb.hour, minute=lb.minute, second=lb.second)
+                        rb = timeBounds[it.index,1]
+                        rb = datetime.datetime(year=rb.year, month=rb.month, day=rb.day,
+                                hour=rb.hour, minute=rb.minute, second=rb.second)
+                        num_days = 0
+
+                        # years
+                        if (timeDuration[0] > 1):
+                            et = lb + relativedelta(years=int(timeDuration[0])-1)
+                            num_days = (et-lb).days
+                            if (cal.isleap(et.year) and (rb-et).days==29):
+                                num_days += 1
+
+                        # months
+                        if (timeDuration[1] > 0):
+                            et = lb + relativedelta(months=int(timeDuration[1])-1)
+                            num_days = (et-lb).days + cal.monthrange(et.year, et.month)[1] - 1
+
+                        # days
+                        num_days += max(int(timeDuration[3])-1,0)
+
+                        # less than a day
+                        rest = (relativedelta(hours=max(int(timeDuration[4])-1,0))
+                                 + relativedelta(minute=max(int(timeDuration[5])-1,0))
+                                 + relativedelta(second=max(int(timeDuration[6])-1,0)))
+
+                        timeBoundRight  = rb - (relativedelta(days=num_days) + rest)
+
                 # test time records against time bounds
                 if timeBounds is not None:
                     if (timeBounds[it.index,0] > tSteps[it.index]) or \
-                       (timeBounds[it.index,1] < tSteps[it.index]):
+                       ( timeBoundRight        < tSteps[it.index]):
                         itRc = 'FAILED (record not in bounds)'
                         rc = 1
                     if nRecord is not None:
-                        if timeBounds[it.index,1] < nRecord:
+                        if timeBoundRight < nRecord:
                             itRc = 'FAILED (gap in right bound)'
                             rc = 1
-                        if timeBounds[it.index,1] > nRecord:
+                        if timeBoundRight > nRecord:
                             itRc = 'FAILED (overlap in right bound)'
                             rc = 1
                     if itRecStatus is not None:
@@ -1722,17 +1763,8 @@ class CMSAFChecker:
                         itRc = itRc + ' [status='+itRecStatus+']'
                     print(f"{'':<8}{it.index+1: >3} {tSteps[it.index]} -> {itRc}")
 
-                if timeBounds is not None:
-                    if timeBoundsKey != 'climatology':
-                        prevTimeEnd = timeBounds[it.index,1]
-                    elif timeDuration is not None:
-                        prevTimeEnd = datetime.datetime(
-                            year=timeBounds[it.index,1].year-max(int(timeDuration[0])-1,0),
-                            month=timeBounds[it.index,1].month-max(int(timeDuration[1])-1,0),
-                            day=timeBounds[it.index,1].day)
-                        prevTimeEnd -= datetime.timedelta(days=max(timeDuration[3]-1,0),
-                            hours=max(timeDuration[4]-1,0), minutes=max(timeDuration[5]-1,0),
-                            seconds=max(timeDuration[6]-1,0))
+                if timeBounds is not None and timeBoundRight is not None:
+                    prevTimeEnd = timeBoundRight
 
                 it.iternext()
 
@@ -2251,6 +2283,8 @@ def main():
         for root, dirs, names in os.walk(args.directory, followlinks=True):
             tmp = fnmatch.filter(names, args.files[0])
             for fn in tmp:
+                if (args.directory != root):
+                    continue
                 fnp=os.path.join(root,fn)
                 if os.access(fnp, os.R_OK):
                     files.append(fnp)
