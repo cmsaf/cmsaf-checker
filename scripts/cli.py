@@ -72,12 +72,18 @@ def cmsaf_decode_grid(filename):
     if decode == None:
         return None
 
-    if (decode.group(10)) == "19":
-        return np.float64("0.25")
+    if (decode.group(10)) == "17":
+        return np.float64("0.03")
     elif (decode.group(10)) == "23":
         return np.float64("0.05")
     elif (decode.group(10)) == "26":
         return np.float64("0.1")
+    elif (decode.group(10)) == "19":
+        return np.float64("0.25")
+    elif (decode.group(10)) == "13":
+        return np.float64("0.5")
+    elif (decode.group(10)) == "22":
+        return np.float64("0.625")
     elif (decode.group(10)) == "20":
         return np.float64("1.0")
 
@@ -1210,7 +1216,10 @@ class CMSAFChecker:
         expClimate = False
         expTimeDuration   = None
         expTimeResolution = None
-        if decode is not None:
+
+        if decode is None:
+            print(f"{RC_WARN} filename '{self.File}' does not match CM SAF naming convention, skipping filename-derived checks")
+        else:
             # test for diurnal cycle
             if decode.group(3) == 'd':
                 expRecords = 24
@@ -1259,7 +1268,7 @@ class CMSAFChecker:
         # find record_status variables
         tmp = ds.getVariableByName("record_status")
         recordStatus = {}
-        print("\nrecord_status")
+        print("\n>>> record_status")
 
         if len(tmp) == 0:
             if ds.isSwathData():
@@ -1307,13 +1316,13 @@ class CMSAFChecker:
             print(f"\n{RC_FAIL} <<< record_status")
             rc = 1
 
+        print("\n>>> time")
+
         # test time coordinates
         tests['time'] = 0
         if len(axisTime) == 0:
             print(f"{RC_ERR} missing time variable")
             tests['time'] = 1
-        else:
-            print("\ntime")
 
         for vTime in axisTime.keys():
             print(f"\n{'':<4}{vTime}")
@@ -1350,17 +1359,22 @@ class CMSAFChecker:
             print(f"\n{'':<4}{RC_FAIL} <<< time")
             rc = 1
 
+        resFile = cmsaf_decode_grid (self.File)
+
         # test latitude
         tests['lat'] = 0
-        resFile = cmsaf_decode_grid (self.File)
         axisLat = ds.getCoordinates("latitude", shortName=["lat","latitude"])
 
+        print("\n>>> latitude")
+
         if len(axisLat) == 0:
-            print(f"{RC_ERR} missing latitude coordinate")
-            tests['lat'] = 1
-            rc = 1
-        else:
-            print("\nlatitude")
+            if resFile is None:
+                print(f"{'':<4}{RC_INFO} no regular grid expected from filename, skipping latitude coordinate check")
+                tests['lat'] = 0
+            else:
+                print(f"{'':<4}{RC_ERR} missing latitude coordinate")
+                tests['lat'] = 1
+                rc = 1
 
         for vLat in axisLat.keys():
             print(f"\n{'':<4}{vLat}")
@@ -1386,12 +1400,16 @@ class CMSAFChecker:
         tests['lon'] = 0
         axisLon = ds.getCoordinates("longitude", shortName=["lon","longitude"])
 
-        if len(axisLon) == 0:
-            print(f"{RC_ERR} missing longitude coordinate")
-            tests['lon'] = 1
-            rc = 1
-        else:
-            print("\nlongitude")
+        print("\n>>> longitude")
+
+       if len(axisLon) == 0:
+            if resFile is None:
+                print(f"{'':<4}{RC_INFO} no regular grid expected from filename, skipping longitude coordinate check")
+                tests['lon'] = 0
+            else:
+                print(f"{'':<4}{RC_ERR} missing longitude coordinate")
+                tests['lon'] = 1
+                rc = 1
 
         for vLon in axisLon.keys():
             print(f"\n{'':<4}{vLon}")
@@ -1522,7 +1540,6 @@ class CMSAFChecker:
             timeStepFn = datetime.datetime.strptime(self.File[5:17], "%Y%m%d%H%M")
             timeStepFn = timeStepFn.replace(tzinfo=pytz.utc);
         except ValueError:
-            print(f"{'':<8}{RC_INFO} Non standard file name '{self.File}'")
             timeStepFn = None
 
         # checks on time steps
