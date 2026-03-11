@@ -1402,7 +1402,7 @@ class CMSAFChecker:
 
         print("\n>>> longitude")
 
-       if len(axisLon) == 0:
+        if len(axisLon) == 0:
             if resFile is None:
                 print(f"{'':<4}{RC_INFO} no regular grid expected from filename, skipping longitude coordinate check")
                 tests['lon'] = 0
