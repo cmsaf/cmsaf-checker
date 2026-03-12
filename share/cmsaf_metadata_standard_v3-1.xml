@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <cmsaf_metadata_standard xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-   <version_number>3.1</version_number>
-   <last_modified>2025-11-28</last_modified>
+   <version_number>3.1.1</version_number>
+   <last_modified>2026-03-12</last_modified>
    <institution>CM SAF</institution>
    <contact>karsten.fennig@dwd.de</contact>
 
@@ -105,20 +105,20 @@
      <regex>^degree(s)?_north$</regex>
    </entry>
 
-   <entry id="geospatial_lat_min" type="f" required="yes">
+   <entry id="geospatial_lat_min" type="f64" required="yes">
    </entry>
 
-   <entry id="geospatial_lat_max" type="f" required="yes">
+   <entry id="geospatial_lat_max" type="f64" required="yes">
    </entry>
 
    <entry id="geospatial_lon_units" type="s" required="yes">
      <regex>^degree(s)?_east$</regex>
    </entry>
 
-   <entry id="geospatial_lon_min" type="f" required="yes">
+   <entry id="geospatial_lon_min" type="f64" required="yes">
    </entry>
 
-   <entry id="geospatial_lon_max" type="f" required="yes">
+   <entry id="geospatial_lon_max" type="f64" required="yes">
    </entry>
 
    <entry id="geospatial_lat_resolution" type="s" required="no">
