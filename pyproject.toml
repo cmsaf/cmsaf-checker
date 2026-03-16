@@ -7,10 +7,11 @@ authors = [
 ]
 requires-python = ">= 3.10"
 version = "3.1.1"
-dependencies = ["numpy >= 2.2.0", "netCDF4 >= 1.7.0", "astropy"]
+dependencies = ["numpy >= 2.2.0", "netCDF4 >= 1.7.0", "astropy", "requests"]
 
 [project.scripts]
-cmsaf-checker = "cmsaf_checker.scripts.cli:main"
+cmsaf-checker          = "cmsaf_checker.scripts.cli:main"
+cmsaf-download-gcmd    = "cmsaf_checker.scripts.download_gcmd_keywords:main"
 
 [build-system]
 requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2", 'setuptools_scm_git_archive']
