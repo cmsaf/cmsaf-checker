@@ -6,7 +6,7 @@ authors = [
   {name = "Karsten Fennig"},
 ]
 requires-python = ">= 3.10"
-version = "3.1.1"
+version = "3.2.0"
 dependencies = ["numpy >= 2.2.0", "netCDF4 >= 1.7.0", "astropy", "requests"]
 
 [project.scripts]
