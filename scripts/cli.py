@@ -8,7 +8,7 @@ import glob
 import numpy as np
 import pytz, datetime
 
-__version__ = "3.2.0"
+__version__ = "3.2.1"
 __prefix__  = ""
 STANDARD = ''
 
@@ -249,22 +249,21 @@ class Keywords:
     class to read GCMD keywords
     """
 
-    def __init__(self, filename, standardsPath=None):
-        self.filename = filename
+    def __init__(self, filename, search_paths=None):
+        self.filename = None
         self.groups = None
         self.keywordList = {}
 
-        if standardsPath:
-          self.filename = standardsPath + "/" + self.filename
+        # search for the keyword file in order c, b, a
+        for path in (search_paths or []):
+            candidate = os.path.join(path, filename)
+            if os.path.isfile(candidate):
+                self.filename = candidate
+                break
 
-        # try to open data file
-        try:
-            fh = open(self.filename, "r")
-            fh.close()
-
-        # fallback to global STANDARD
-        except IOError as detail:
-            self.filename = STANDARD+"/"+filename
+        # last resort: treat filename as a literal path
+        if self.filename is None:
+            self.filename = filename  # readFile() will report the IOError if missing
 
     def readFile(self):
         try:
@@ -496,19 +495,20 @@ class CMSAFChecker:
     CM SAF Checking class
     """
 
-    def __init__(self, metadataStandards=None, version=None, referenceFile=None,
+    def __init__(self, search_paths=None, version=None, referenceFile=None,
         coordinates=False, ignore=None, lazy=False, standard_file=None):
 
-        self.metadataStandards = metadataStandards
-        self.standard_file     = standard_file
-        self.Dataset           = None
-        self.testFn            = None
-        self.refFile           = referenceFile
-        self.refDataset        = None
-        self.coordinates       = coordinates
-        self.lazy              = lazy
-        self.gIgnoreAtt        = []
-        self.vIgnoreAtt        = []
+        self.search_paths  = search_paths or []
+        self.standard_file = standard_file
+        self.Dataset       = None
+        self.testFn        = None
+        self.refFile       = referenceFile
+        self.refDataset    = None
+        self.coordinates   = coordinates
+        self.lazy          = lazy
+        self.std_name_dh   = None
+        self.gIgnoreAtt    = []
+        self.vIgnoreAtt    = []
         self.err = 0
         self.errAttr = []
         self.warn = 0
@@ -520,7 +520,7 @@ class CMSAFChecker:
         else:
             self.version = ""
 
-        # open file
+        # open reference NetCDF file
         if self.refFile is not None:
             try:
                 print(f"Reference File: '{self.refFile}'\n")
@@ -528,71 +528,6 @@ class CMSAFChecker:
             except:
                 print("\nCould not open reference file, please check that NetCDF is formatted correctly.\n")
                 raise
-
-        # Set up dictionary of defined standards
-        if (self.refDataset == None):
-            parser = make_parser()
-            parser.setFeature(feature_namespaces, 0)
-            self.std_name_dh = CMSAFStandard()
-            parser.setContentHandler(self.std_name_dh)
-
-            # find given standards file
-            fn = None
-            if self.standard_file is not None:
-                if os.path.isfile(self.standard_file):
-                    fn = self.standard_file
-                if fn is None:
-                    if os.path.isdir(self.metadataStandards):
-                        tmp = os.path.join(self.metadataStandards,self.standard_file)
-                        if os.path.isfile(tmp):
-                            fn = tmp
-                if fn is None:
-                    print(f"Could not find '{self.standard_file}'")
-                    exit(1)
-                else:
-                    print(f"Using standard file: '{fn}'")
-
-            # find default standards file
-            if fn is None:
-                fn = self.metadataStandards
-                if (os.path.isdir(fn)):
-                    fn = fn+"/cmsaf_metadata_standard"+self.version+".xml"
-                else:
-                    self.metadataStandards = STANDARD
-
-            # read standard files
-            try:
-                parser.parse(fn)
-            except IOError as detail:
-                print (detail)
-                raise
-
-            # read included file
-            if (hasattr(self.std_name_dh, 'include')):
-                fn = self.std_name_dh.include
-                if not os.path.isfile(fn):
-                    fn = os.path.join(self.metadataStandards, self.std_name_dh.include)
-                    if not os.path.isfile(fn):
-                        fn = None
-
-                if fn is None:
-                    print (f"No such file '{self.std_name_dh.include}'.")
-                    exit (1)
-                else:
-                    print (f"Including '{fn}'.")
-
-                include_ = CMSAFStandard()
-                parser.setContentHandler(include_)
-                try:
-                    parser.parse(fn)
-                except IOError as detail:
-                    print (detail)
-                    raise
-
-                # update dict
-                tmp = self.std_name_dh.dict
-                self.std_name_dh.dict = include_.dict
-                self.std_name_dh.dict.update(tmp)
 
         # attributes to ignore
         if (self.refFile is not None):
@@ -604,6 +539,69 @@ class CMSAFChecker:
                     self.vIgnoreAtt.append(att)
                 else:
                     self.gIgnoreAtt.append(att)
+
+    def _loadStandard(self):
+        """
+        Load the XML metadata standard, searching each path.
+        Each referenced file (main XML, included XML, GCMD keyword CSVs) is
+        resolved independently through the same search_paths list so a newer
+        version of any individual file in an earlier path takes precedence.
+        """
+        parser = make_parser()
+        parser.setFeature(feature_namespaces, 0)
+        self.std_name_dh = CMSAFStandard()
+        parser.setContentHandler(self.std_name_dh)
+
+        def find_file(filename):
+            """Return the first match for filename across search_paths, or None."""
+            for path in self.search_paths:
+                candidate = os.path.join(path, filename)
+                if os.path.isfile(candidate):
+                    return candidate
+            if os.path.isfile(filename):
+                return filename
+            return None
+
+        # locate the standard XML
+        if self.standard_file is not None:
+            fn = find_file(self.standard_file)
+            if fn is None:
+                print(f"Could not find '{self.standard_file}' in any search path: {self.search_paths}")
+                exit(1)
+        else:
+            default_name = "cmsaf_metadata_standard" + self.version + ".xml"
+            fn = find_file(default_name)
+            if fn is None:
+                print(f"Could not find '{default_name}' in any search path: {self.search_paths}")
+                exit(1)
+
+        print(f"Using standard file: '{fn}'")
+        try:
+            parser.parse(fn)
+        except IOError as detail:
+            print(detail)
+            raise
+
+        # locate and load any included XML, searched independently
+        if hasattr(self.std_name_dh, 'include'):
+            inc_fn = find_file(self.std_name_dh.include)
+            if inc_fn is None:
+                print(f"No such file '{self.std_name_dh.include}'.")
+                exit(1)
+            print(f"Including '{inc_fn}'.")
+            include_ = CMSAFStandard()
+            parser.setContentHandler(include_)
+            try:
+                parser.parse(inc_fn)
+            except IOError as detail:
+                print(detail)
+                raise
+
+            # update dict
+            tmp = self.std_name_dh.dict
+            self.std_name_dh.dict = include_.dict
+            self.std_name_dh.dict.update(tmp)
+
 
     def __del__(self):
         if (self.refDataset):
@@ -623,6 +621,11 @@ class CMSAFChecker:
         """
         check wrapping procedure
         """
+
+        # Load standard file for this file
+        if self.refDataset is None:
+            self._loadStandard()
+            print(f"Using CM SAF Metadata Standard Version {self.std_name_dh.version_number} ({self.std_name_dh.last_modified})")
 
         # Check for valid filename
         fileSuffix = re.compile(r'^\S+\.nc$')
@@ -936,7 +939,7 @@ class CMSAFChecker:
                                         vocabulary_version = decode.group(1)
                                 if (vocabulary_version is not None and vocabulary_name is not None):
                                     keywordsFn = keywordsFn.replace('${'+vocabulary_name+'_version}',vocabulary_version)
-                            kw = Keywords(filename=keywordsFn, standardsPath=self.metadataStandards)
+                            kw = Keywords(filename=keywordsFn, search_paths=self.search_paths)
                             keyRc = kw.readFile()
                             if (keyRc != 0):
                                 print(f"{RC_ERR} Test incomplete")
@@ -2249,21 +2252,21 @@ def main():
     from os  import getenv
     from sys import argv,exit
 
-    # get standards
+    # get standards search paths in order: (c) -s option, (b) prefix, (a) script share
     prefix = getenv('CMSAF_CHECKER_PREFIX')
-    if (prefix is not None):
-        STANDARD = prefix + '/share/'
-    else:
-        STANDARD = os.path.dirname(__file__)
-        STANDARD = os.path.join(os.path.dirname(STANDARD),"share")
+    path_a = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "share")
+    path_b = prefix if prefix is not None else None
+    default_search_paths = [p for p in [path_b, path_a] if p is not None]
 
     print(f"CMSAF Checker Version {__version__}")
-    print(f"CMSAF Standards path '{STANDARD}'")
 
     # argument parser
     parser = argparse.ArgumentParser(prog='cmsaf-checker')
     parser.add_argument('-s', '--cmsaf_metadata_standard',
-        default=STANDARD, help='location of the CM SAF Metadata Standards')
+        default=None, metavar='PATH',
+        help='additional search path for CM SAF standard and GCMD keyword files. '
+             'Files are resolved in order: this path, $CMSAF_CHECKER_PREFIX, '
+             f'{path_a}')
     parser.add_argument('-v', '--version',
         help='CM SAF standards version to apply')
     parser.add_argument('-f', '--standard_file',
@@ -2284,18 +2287,22 @@ def main():
 
     args = parser.parse_args()
 
+    # build final search path list: prepend explicit -s if given
+    search_paths = default_search_paths
+    if args.cmsaf_metadata_standard is not None:
+        search_paths = [args.cmsaf_metadata_standard] + search_paths
+    for i, p in enumerate(search_paths, start=ord('a')):
+        print(f"CMSAF Standards path ({chr(i)}) '{p}'")
+
     # get a new checker object
     if (args.reference == None):
-        inst = CMSAFChecker(metadataStandards=args.cmsaf_metadata_standard, version=args.version,
+        inst = CMSAFChecker(search_paths=search_paths, version=args.version,
             coordinates=args.coordinates, lazy=args.lazy, ignore=args.ignore_attr,
             standard_file=args.standard_file)
     else:
         inst = CMSAFChecker(referenceFile=args.reference, ignore=args.ignore_attr,
             coordinates=args.coordinates, lazy=args.lazy,
             standard_file=args.standard_file)
-
-    if (inst.refDataset == None):
-        print(f"Using CM SAF Metadata Standard Version {inst.std_name_dh.version_number} ({inst.std_name_dh.last_modified})")
 
     # file pattern expansion
     files = []

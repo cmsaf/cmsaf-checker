@@ -5,15 +5,18 @@ This tool is used to check data files compliance with [CM SAF agreed metadata co
 ## Usage
 
 ```
-cmsaf-checker [-h] [-s CMSAF_METADATA_STANDARD] [-v VERSION] [-r REFERENCE] [-i IGNORE_ATTR] [-c] [-m [MISSING]] [-l] [-d DIRECTORY] files [files ...]
+cmsaf-checker [-h] [-s PATH] [-v VERSION] [-r REFERENCE] [-i IGNORE_ATTR] [-c] [-m [MISSING]] [-l] [-d DIRECTORY] files [files ...]
 
 positional arguments:
   files
 
 options:
   -h, --help            show this help message and exit
-  -s, --cmsaf_metadata_standard CMSAF_METADATA_STANDARD
-                        location of the CM SAF Metadata Standards
+  -s, --cmsaf_metadata_standard PATH
+                        additional search path for CM SAF standard and GCMD
+                        keyword files. Files are resolved in order: this path,
+                        $CMSAF_CHECKER_PREFIX, the share folder next to the
+                        installed script
   -v, --version VERSION
                         CM SAF standards version to apply
   -f, --standard_file STANDARD_FILE
@@ -29,6 +32,22 @@ options:
   -d, --directory DIRECTORY
                         Search for files with pattern in this directory.
 ```
+
+## Standard and keyword file search paths
+
+The checker resolves each reference file (CM SAF metadata standard XML, included
+XML, and GCMD keyword CSV files) independently, searching in the following order:
+
+| Priority | Source | How to set |
+|----------|--------|------------|
+| highest | Explicit path | `-s PATH` command-line option |
+|        | Prefix directory | `CMSAF_CHECKER_PREFIX` environment variable |
+| lowest | Script share folder | Installed automatically alongside the package |
+
+Because each file is looked up individually, it is possible to override only a
+single keyword CSV or the included XML with a newer version by placing it in a
+higher-priority path, while the remaining files are still taken from the default
+share folder.
 
 ## Examples
 
