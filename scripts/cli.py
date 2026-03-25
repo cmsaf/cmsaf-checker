@@ -244,6 +244,21 @@ class CMSAFStandard(ContentHandler):
             self.include = normalize_whitespace(self.include)
 
 
+def _find_file(filename: str, search_paths: list) -> str | None:
+    """Return the first match for *filename* across *search_paths*, or None.
+
+    Each entry in *search_paths* is checked in order. As a final fallback
+    the filename is treated as a literal path and tested directly.
+    """
+    for path in search_paths:
+        candidate = os.path.join(path, filename)
+        if os.path.isfile(candidate):
+            return candidate
+    if os.path.isfile(filename):
+        return filename
+    return None
+
+
 class Keywords:
     """
     class to read GCMD keywords
@@ -254,16 +269,9 @@ class Keywords:
         self.groups = None
         self.keywordList = {}
 
-        # search for the keyword file in order c, b, a
-        for path in (search_paths or []):
-            candidate = os.path.join(path, filename)
-            if os.path.isfile(candidate):
-                self.filename = candidate
-                break
-
-        # last resort: treat filename as a literal path
-        if self.filename is None:
-            self.filename = filename  # readFile() will report the IOError if missing
+        # resolve keyword file; fall back to literal path so readFile() can
+        # report a meaningful IOError if it is genuinely missing
+        self.filename = _find_file(filename, search_paths or []) or filename
 
     def readFile(self):
         try:
@@ -552,25 +560,15 @@ class CMSAFChecker:
         self.std_name_dh = CMSAFStandard()
         parser.setContentHandler(self.std_name_dh)
 
-        def find_file(filename):
-            """Return the first match for filename across search_paths, or None."""
-            for path in self.search_paths:
-                candidate = os.path.join(path, filename)
-                if os.path.isfile(candidate):
-                    return candidate
-            if os.path.isfile(filename):
-                return filename
-            return None
-
         # locate the standard XML
         if self.standard_file is not None:
-            fn = find_file(self.standard_file)
+            fn = _find_file(self.standard_file, self.search_paths)
             if fn is None:
                 print(f"Could not find '{self.standard_file}' in any search path: {self.search_paths}")
                 exit(1)
         else:
             default_name = "cmsaf_metadata_standard" + self.version + ".xml"
-            fn = find_file(default_name)
+            fn = _find_file(default_name, self.search_paths)
             if fn is None:
                 print(f"Could not find '{default_name}' in any search path: {self.search_paths}")
                 exit(1)
@@ -584,7 +582,7 @@ class CMSAFChecker:
 
         # locate and load any included XML, searched independently
         if hasattr(self.std_name_dh, 'include'):
-            inc_fn = find_file(self.std_name_dh.include)
+            inc_fn = _find_file(self.std_name_dh.include, self.search_paths)
             if inc_fn is None:
                 print(f"No such file '{self.std_name_dh.include}'.")
                 exit(1)
