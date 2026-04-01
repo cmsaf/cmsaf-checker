@@ -124,12 +124,12 @@ class CMSAFStandard(ContentHandler):
     """
 
     def __init__(self):
-        self.inContent = 0
-        self.inRegex = 0
-        self.inKeywords = 0
-        self.inVersionNoContent = 0
-        self.inLastModifiedContent = 0
-        self.inInclude = 0
+        self.inContent = False
+        self.inRegex = False
+        self.inKeywords = False
+        self.inVersionNoContent = False
+        self.inLastModifiedContent = False
+        self.inInclude = False
         self.dict = {}
         self.entry = {}
         self.content = ""
@@ -153,14 +153,14 @@ class CMSAFStandard(ContentHandler):
 
       # possible content
       elif name == 'content':
-        self.inContent = 1
+        self.inContent = True
         self.content = {}
         self.content['value'] = ""
         self.content['type']  = attrs.get('type', "string").strip(' ');
 
       # regular expression
       elif name == 'regex':
-        self.inRegex = 1
+        self.inRegex = True
         self.regex = {}
         self.regex['value'] = ""
         self.regex['warn']  = attrs.get('warn', "").strip(' ')
@@ -168,19 +168,19 @@ class CMSAFStandard(ContentHandler):
 
       # keyword list
       elif name == 'keywords':
-        self.inKeywords = 1
+        self.inKeywords = True
         self.keywords = ""
 
       elif name == 'version_number':
-        self.inVersionNoContent = 1
+        self.inVersionNoContent = True
         self.version_number = ""
 
       elif name == 'last_modified':
-        self.inLastModifiedContent = 1
+        self.inLastModifiedContent = True
         self.last_modified = ""
 
       elif name == 'include':
-        self.inInclude = 1
+        self.inInclude = True
         self.include = ""
 
     def characters(self, ch):
@@ -209,30 +209,30 @@ class CMSAFStandard(ContentHandler):
             self.entry.clear()
 
         elif name == 'content':
-            self.inContent = 0
+            self.inContent = False
             self.entry['content'].append(self.content)
 
         elif name == 'regex':
-            self.inRegex = 0
+            self.inRegex = False
             self.entry['regex'].append(self.regex)
 
         elif name == 'keywords':
-          self.inKeywords = 0
+          self.inKeywords = False
           self.entry['keywords'].append(self.keywords)
 
         # If it's the end of the version_number element, save it
         elif name == 'version_number':
-            self.inVersionNoContent = 0
+            self.inVersionNoContent = False
             self.version_number = normalize_whitespace(self.version_number)
 
         # If it's the end of the last_modified element, save the last modified date
         elif name == 'last_modified':
-            self.inLastModifiedContent = 0
+            self.inLastModifiedContent = False
             self.last_modified = normalize_whitespace(self.last_modified)
 
         # If it's the end of the include element, save it
         elif name == 'include':
-            self.inInclude = 0
+            self.inInclude = False
             self.include = normalize_whitespace(self.include)
 
 
