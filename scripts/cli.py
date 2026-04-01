@@ -32,7 +32,7 @@ def normalize_whitespace(text):
     return ' '.join(text.split())
 
 
-def significant_digits(value, digits):
+def significant_digits(value):
     indx = np.nonzero(value)
     res  = np.multiply(value, 0)
     res[indx[0]] = np.log10(np.absolute(value[indx[0]]))
@@ -1927,7 +1927,7 @@ class CMSAFChecker:
                     rc = 1
                 else:
                     finfo    = np.finfo(coord.dtype)
-                    eps      = significant_digits(coord,finfo.precision)*finfo.resolution
+                    eps      = significant_digits(coord) * finfo.resolution
                     indx     = np.arange(np.int64(0),len(coord),dtype=np.int64)
                     meshExp  = np.multiply(indx, np.multiply(np.int64(10000),coordRes)).astype(np.int64)
                     tmp      = np.rint(1./eps[0]).astype(np.float64)
