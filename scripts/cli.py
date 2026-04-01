@@ -1030,8 +1030,11 @@ class CMSAFChecker:
 
             # just test if attribute is there
             if not hasattr(new, attName):
-                print(f"{RC_ERR} Missing attribute :: '{attNameFull}'")
-                rc = 1
+                if attName in ignore:
+                    print(f"{RC_INFO} Missing attribute :: '{attNameFull}'")
+                else:
+                    print(f"{RC_ERR} Missing attribute :: '{attNameFull}'")
+                    rc = 1
             else:
                 # mark as read
                 attCheck[attName] = 1
@@ -1070,6 +1073,11 @@ class CMSAFChecker:
 
         # check for new attributes
         for attName in new.ncattrs():
+            if parent != "/":
+                attNameFull = parent+"@"+attName
+            else:
+                attNameFull = attName
+
             if not attName in attCheck:
                 # skip attributes that are allowed to change
                 if attName in ignore:
