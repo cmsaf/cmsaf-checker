@@ -49,21 +49,7 @@ def float_spacing (x, y):
     return res
 
 
-def leap_year(year):
-    """
-    Check if year is a leap year
-    """
 
-    if (year % 4) == 0:
-        if (year % 100) == 0:
-            if (year % 400) == 0:
-                return True
-            else:
-                return False
-        else:
-             return True
-    else:
-        return False
 
 
 def cmsaf_decode_grid(filename):
@@ -1685,7 +1671,7 @@ class CMSAFChecker:
 
                     # add one day during a leap year for last feb pentad period
                     if expResolution[3] == 5:
-                        if (nRecord.timetuple().tm_yday == 61 and leap_year(nRecord.year)):
+                        if (nRecord.timetuple().tm_yday == 61 and cal.isleap(nRecord.year)):
                             nRecord += datetime.timedelta(days=1)
 
                 # decode matching record status
