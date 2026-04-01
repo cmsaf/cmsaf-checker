@@ -50,32 +50,36 @@ def float_spacing (x, y):
 
 
 
+# Grid code → resolution in degrees, as defined in the CM SAF naming convention (PDF table, page 8).
+# Lat/lon grids only; projection-based codes (e.g. 05, 10, 25) are intentionally absent
+# because they have no single scalar resolution and are handled as non-regular grids (return None).
+_GRID_RESOLUTION: dict[str, np.float64] = {
+    "17": np.float64("0.03"),
+    "23": np.float64("0.05"),
+    "26": np.float64("0.1"),
+    "19": np.float64("0.25"),
+    "13": np.float64("0.5"),
+    "22": np.float64("0.625"),
+    "20": np.float64("1.0"),
+}
 
 
 def cmsaf_decode_grid(filename):
     """
-    Decode the grid definition from CM SAF standarda file name
+    Decode the grid resolution (degrees) from a CM SAF standard filename.
+
+    Returns the resolution as np.float64 for known lat/lon grid codes,
+    or None if the filename does not match the naming convention or the
+    grid code has no scalar resolution (e.g. satellite projection grids).
     """
     decode = re.match(CMSAF_NAMING_STANDARD, filename)
-    if decode == None:
+    if decode is None:
         return None
-
-    if (decode.group(10)) == "17":
-        return np.float64("0.03")
-    elif (decode.group(10)) == "23":
-        return np.float64("0.05")
-    elif (decode.group(10)) == "26":
-        return np.float64("0.1")
-    elif (decode.group(10)) == "19":
-        return np.float64("0.25")
-    elif (decode.group(10)) == "13":
-        return np.float64("0.5")
-    elif (decode.group(10)) == "22":
-        return np.float64("0.625")
-    elif (decode.group(10)) == "20":
-        return np.float64("1.0")
-
-    return None
+    code = decode.group(10)
+    resolution = _GRID_RESOLUTION.get(code)
+    if resolution is None:
+        print(f"{RC_WARN} Unknown grid code '{code}' in filename '{filename}'")
+    return resolution
 
 
 def decode_timeDuration(duration):
