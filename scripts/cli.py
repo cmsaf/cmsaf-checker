@@ -3,10 +3,15 @@ from netCDF4 import Dataset, num2date
 from astropy.time import Time
 from dateutil.relativedelta import relativedelta
 import calendar as cal
-import re, string, types, csv, os.path
-import glob
+import csv
+import datetime
+import os
+import re
+from xml.sax import ContentHandler, make_parser
+from xml.sax.handler import feature_namespaces
+
 import numpy as np
-import pytz, datetime
+import pytz
 
 __version__ = "3.2.1"
 __prefix__  = ""
@@ -20,9 +25,6 @@ RC_OK   = "## OK ##"
 RC_FAIL = "## FAILED ##"
 RC_INFO = "## INFORMATION ##"
 
-from xml.sax import ContentHandler
-from xml.sax import make_parser
-from xml.sax.handler import feature_namespaces
 
 
 def normalize_whitespace(text):
