@@ -13,7 +13,7 @@ from xml.sax.handler import feature_namespaces
 import numpy as np
 import pytz
 
-__version__ = "3.2.1"
+__version__ = "3.2.2"
 __prefix__  = ""
 STANDARD = ''
 
