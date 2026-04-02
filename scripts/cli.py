@@ -296,7 +296,7 @@ class Keywords:
                 self.groups.pop()
             elif self.groups:
                 uuid = row.pop().strip('"')
-                if (len(row) == len(self.groups)):
+                if len(row) == len(self.groups):
                     kw = {}
                     for index, item in enumerate(self.groups):
                         kw[item] = row[index].strip()
@@ -348,7 +348,7 @@ class Keywords:
         for entry in result:
             list = []
             for item in self.groups:
-                if (len(entry[item]) > 0): list.append(entry[item])
+                if len(entry[item]) > 0: list.append(entry[item])
             kwList.append(" > ".join(list))
 
         # return as list of strings
@@ -393,7 +393,7 @@ class DatasetX():
         rc = False
 
         if hasattr(self,"cdm_data_type"):
-            if (self.cdm_data_type == "swath"):
+            if self.cdm_data_type == "swath":
                 rc = True
 
         return rc
@@ -422,7 +422,7 @@ class DatasetX():
         result = {}
 
         for item in self.getVariableList():
-            if (os.path.basename(item) == name):
+            if os.path.basename(item) == name:
                 result[item] = self._ds[item]
 
         return result
@@ -490,10 +490,10 @@ class DatasetX():
         while True:
             for _keyTime in axisTime.keys():
                 _path = axisTime[_keyTime].group().path
-                if (_path == iPath):
+                if _path == iPath:
                     keyTime = _keyTime
                     break
-            if (keyTime is not None or iPath == "/"):
+            if keyTime is not None or iPath == "/":
                 break
             else:
                 iPath = os.path.dirname(iPath)
@@ -541,12 +541,12 @@ class CMSAFChecker:
                 raise
 
         # attributes to ignore
-        if (self.refFile is not None):
+        if self.refFile is not None:
             self.gIgnoreAtt = ["date_created", "time_coverage_start", "time_coverage_end", "filename", "date_modified", "history"]
-        if (ignore is not None):
+        if ignore is not None:
             attList = ignore.split(",")
             for att in attList:
-                if (att.find('@') >= 0):
+                if att.find('@') >= 0:
                     self.vIgnoreAtt.append(att)
                 else:
                     self.gIgnoreAtt.append(att)
@@ -605,7 +605,7 @@ class CMSAFChecker:
 
 
     def __del__(self):
-        if (self.refDataset):
+        if self.refDataset:
             self.refDataset.close();
 
 
@@ -685,7 +685,7 @@ class CMSAFChecker:
         finally:
             self.Dataset.close()
 
-        return (rc+rcCompress+rcVariables)
+        return rc+rcCompress+rcVariables
 
 
     def _checkStandard(self):
@@ -785,7 +785,7 @@ class CMSAFChecker:
 
                 # check attributes type
                 attrType = type(attr)
-                if (attrType == type(np.array([]))):
+                if attrType == type(np.array([])):
                     if (attr.size == 1) and (type(attr[0]) == type(np.float32(1.0))):
                         attrType = "f32"
                     elif (attr.size == 1) and (type(attr[0]) == type(np.float64(1.0))):
@@ -808,7 +808,7 @@ class CMSAFChecker:
                 # report empty attribute
                 if attrType == 's':
                     if len(attr) == 0:
-                        if (std['required'] == "yes"):
+                        if std['required'] == "yes":
                             print(f"{RC_ERR} empty required attribute")
                             self.err += 1
                             self.errAttr.append(key)
@@ -854,7 +854,7 @@ class CMSAFChecker:
                     # remove white spaces, and quotes
                     a_ = a.strip()
                     a_ = a_.strip('"')
-                    if (a != a_):
+                    if a != a_:
                         print(f"{RC_WARN} white spaces or quotes detected")
                         self.warn += 1
                         if key not in self.warnAttr:
@@ -897,7 +897,7 @@ class CMSAFChecker:
                         validIndex = None
                         for index, item in enumerate(std['regex']):
                           if re.search(item['value'], a):
-                            if (item['warn'] != ""):
+                            if item['warn'] != "":
                                 print(f"{RC_WARN} {item['warn']}")
                                 self.warn += 1
                                 if key not in self.warnAttr:
@@ -936,13 +936,13 @@ class CMSAFChecker:
                                     vocabulary_name = decode.group(1)
                                 if vocabulary_name is not None and hasattr(ds,vocabulary_name):
                                     decode = re.match(r'^.*Version +([0-9\.]*)$', getattr(ds,vocabulary_name))
-                                    if (decode is not None):
+                                    if decode is not None:
                                         vocabulary_version = decode.group(1)
-                                if (vocabulary_version is not None and vocabulary_name is not None):
+                                if vocabulary_version is not None and vocabulary_name is not None:
                                     keywordsFn = keywordsFn.replace('${'+vocabulary_name+'_version}',vocabulary_version)
                             kw = Keywords(filename=keywordsFn, search_paths=self.search_paths)
                             keyRc = kw.readFile()
-                            if (keyRc != 0):
+                            if keyRc != 0:
                                 print(f"{RC_ERR} Test incomplete")
                                 self.err += 1
                                 self.errAttr.append(key)
@@ -987,7 +987,7 @@ class CMSAFChecker:
 
                 # evaluate hits
                 if len(attrList) > 1:
-                    if (std['join'].lower() == "or"):
+                    if std['join'].lower() == "or":
                         total = 0
                         for i in attrHits:
                             total += i
@@ -997,7 +997,7 @@ class CMSAFChecker:
                           self.err += 1
                           if key not in self.errAttr:
                               self.errAttr.append(key)
-                    elif (std['join'].lower() == "and"):
+                    elif std['join'].lower() == "and":
                         if attrHits.count(0) > 0:
                             hitsIndex = 0
                             for index, item in enumerate(std['content']):
@@ -1044,7 +1044,7 @@ class CMSAFChecker:
 
                 # file name
                 if attName == 'filename':
-                    if (self.File != new.filename):
+                    if self.File != new.filename:
                         print(f"{RC_ERR} incorrect file name :: '{new.filename}'")
                         rc = 1
                     continue
@@ -1058,18 +1058,18 @@ class CMSAFChecker:
                     ar = getattr(ref, vAttName)
                     ac = getattr(new. vAttName)
                     if type(ar) == np.ndarray or type(ar) == np.float32 or type(ar) == np.float64:
-                        if (np.isnan(ar).all() and np.isnan(ac).all()):
+                        if np.isnan(ar).all() and np.isnan(ac).all():
                             tmp = np.array([])
-                        elif (np.isnan(ar).any() or np.isnan(ac).any()):
+                        elif np.isnan(ar).any() or np.isnan(ac).any():
                             tmp = np.array([1])
                         else:
                             tmp = np.where(np.absolute(ar-ac) > 0)[0]
-                        if (len(tmp) > 0):
+                        if len(tmp) > 0:
                             print(f"{RC_ERR} attribute '{attNameFull}' differ")
                             print(f"{'':<4}{attNameFull} :: expecting '{ar}', found '{ac}'")
                             rc = 1
                     else:
-                        if (ar != ac):
+                        if ar != ac:
                             print(f"{RC_ERR} attribute '{attNameFull}' differ")
                             print(f"{'':<4}{attNameFull} ::  expecting '{ar}', found '{ac}'")
                             rc = 1
@@ -1116,19 +1116,19 @@ class CMSAFChecker:
                 # list of attributes to ignore
                 ignore = []
                 for item in self.vIgnoreAtt:
-                    if (item.find('@') >= 0):
+                    if item.find('@') >= 0:
                         itemList = item.split("@")
-                        if (itemList[0] == varName or len(itemList[0]) == 0) :
+                        if itemList[0] == varName or len(itemList[0]) == 0 :
                             ignore.append(itemList[1])
 
                 # check data type
-                if (vr.dtype != vc.dtype):
+                if vr.dtype != vc.dtype:
                     print(f"{RC_ERR} type of variable '{varName}' differs from reference.")
                     print(f"## ref='{vr.dtype}', file='{vc.dtype}'")
                     rc = 1
 
                 # check array shape
-                if (not self.refDataset.isSwathData() and vr.shape != vc.shape):
+                if not self.refDataset.isSwathData() and vr.shape != vc.shape:
                     print(f"{RC_ERR} shape of variable '{varName}' differs from reference.")
                     print(f"## ref='{vr.shape}', file='{vc.shape}'")
                     rc = 1
@@ -1185,7 +1185,7 @@ class CMSAFChecker:
                 rc = 1
 
         # print global attribute check result
-        if (rc == 0):
+        if rc == 0:
             print(f"\n{RC_OK} <<< reference attributes")
         else:
             print(f"\n{RC_FAIL} <<< reference attributes")
@@ -1196,7 +1196,7 @@ class CMSAFChecker:
         rc = self._checkReferenceVariables(self.Dataset, self.refDataset)
 
         # print result
-        if (rc == 0):
+        if rc == 0:
             print(f"\n{RC_OK} <<< variables")
         else:
             print(f"\n{RC_FAIL} <<< variables")
@@ -1235,9 +1235,9 @@ class CMSAFChecker:
             # test for diurnal cycle
             if decode.group(3) == 'd':
                 expRecords = 24
-                if (timeResolution is None):
+                if timeResolution is None:
                     timeResolution = decode_timeDuration("PT1H")
-                elif (timeResolution != decode_timeDuration("PT1H")):
+                elif timeResolution != decode_timeDuration("PT1H"):
                     print(f"{RC_ERR} ## expecting 'PT1H' as time_coverage_resolution for diurnal cycle")
                     tests['time'] = 1
                     timeResolution = decode_timeDuration("PT1H")
@@ -1248,7 +1248,7 @@ class CMSAFChecker:
                 expRecords = 1
 
             # get expected number of records from time_coverage_resolution and time_coverage_duration
-            if (decode.group(2) == 'i'):
+            if decode.group(2) == 'i':
                 if (timeDuration is not None) and (timeResolution is not None):
                     td = datetime.timedelta(days=timeDuration.day,   hours=timeDuration.hour,   minutes=timeDuration.minute,   seconds=timeDuration.second)
                     tr = datetime.timedelta(days=timeResolution.day, hours=timeResolution.hour, minutes=timeResolution.minute, seconds=timeResolution.second)
@@ -1529,15 +1529,15 @@ class CMSAFChecker:
                     if sinceYr < 1:
                         t = Time(axisTmp[it.index], format='jd', scale='utc', precision=4)
                         t = datetime.datetime.strptime(t.isot, "%Y-%m-%dT%H:%M:%S.%f")
-                        if (t is not None):
+                        if t is not None:
                             tSteps[it.index] = t.replace(tzinfo=pytz.utc);
                     else:
                         try:
                             t = num2date (axisTmp[it.index], timeC.units, calendar=calendar)
-                            if (isinstance(t, datetime.datetime)):
+                            if isinstance(t, datetime.datetime):
                                 t = t.replace(tzinfo=pytz.utc)
                             tmp = np.around(t.microsecond * np.float64(0.01)).astype(np.int64)*100
-                            if (t.microsecond > 0):
+                            if t.microsecond > 0:
                                 print(f"{'':<8}{RC_WARN} time record not exact (mus={t.microsecond})")
                             t  = t + datetime.timedelta(microseconds=int(tmp-t.microsecond))
                         except ValueError:
@@ -1545,7 +1545,7 @@ class CMSAFChecker:
                             rc = 1
                             t = None
 
-                        if (t is not None):
+                        if t is not None:
                             tSteps[it.index] = t
                     it.iternext()
             except Exception:
@@ -1561,10 +1561,10 @@ class CMSAFChecker:
             timeStepFn = None
 
         # checks on time steps
-        if (tSteps is not None):
+        if tSteps is not None:
             # compare dates
-            if (decode is not None and ds.isSwathData() == False):
-                if (timeStepFn is not None and decode.group(9) == "002" and decode.group(1) == "UTH"):
+            if decode is not None and ds.isSwathData() == False:
+                if timeStepFn is not None and decode.group(9) == "002" and decode.group(1) == "UTH":
                     timeStepFn = timeStepFn - datetime.timedelta(days=0, hours=0, minutes=30, seconds=0)
                 if (timeStepFn is not None) and (timeStepFn != tSteps[0]):
                     print(f"{'':<8}{RC_ERR} time record mismatch, expecting {timeStepFn.isoformat()} as first record")
@@ -1617,7 +1617,7 @@ class CMSAFChecker:
                         timeBounds[it.multi_index] = t.replace(tzinfo=pytz.utc)
                     else:
                         t = num2date(it[0], tUnits, calendar=calendar)
-                        if (isinstance(t, datetime.datetime)):
+                        if isinstance(t, datetime.datetime):
                             t = t.replace(tzinfo=pytz.utc)
                         timeBounds[it.multi_index] = t
                     it.iternext()
@@ -1675,12 +1675,12 @@ class CMSAFChecker:
                 # next expected record
                 if expResolution is not None:
                     nRecord = itRecord
-                    if (expResolution.year > 0):
+                    if expResolution.year > 0:
                         nRecord = nRecord.replace(year=nRecord.year+expResolution.year)
-                    if (expResolution.month > 0):
+                    if expResolution.month > 0:
                         nm = nRecord.month + expResolution.month
                         ny = nRecord.year
-                        if (nm > 12):
+                        if nm > 12:
                             ny += 1
                             nm -= 12
                         nRecord = nRecord.replace(year=ny,month=nm)
@@ -1689,7 +1689,7 @@ class CMSAFChecker:
 
                     # add one day during a leap year for last feb pentad period
                     if expResolution.day == 5:
-                        if (nRecord.timetuple().tm_yday == 61 and cal.isleap(nRecord.year)):
+                        if nRecord.timetuple().tm_yday == 61 and cal.isleap(nRecord.year):
                             nRecord += datetime.timedelta(days=1)
 
                 # decode matching record status
@@ -1723,14 +1723,14 @@ class CMSAFChecker:
                         num_days = 0
 
                         # years
-                        if (timeDuration.year > 1):
+                        if timeDuration.year > 1:
                             et = lb + relativedelta(years=timeDuration.year-1)
                             num_days = (et-lb).days
-                            if (cal.isleap(et.year) and (rb-et).days==29):
+                            if cal.isleap(et.year) and (rb-et).days==29:
                                 num_days += 1
 
                         # months
-                        if (timeDuration.month > 0):
+                        if timeDuration.month > 0:
                             et = lb + relativedelta(months=timeDuration.month-1)
                             num_days = (et-lb).days + cal.monthrange(et.year, et.month)[1] - 1
 
@@ -1807,7 +1807,7 @@ class CMSAFChecker:
             if hasattr(ds,"time_coverage_start"):
                 try:
                     t = num2date(0, "days since {}".format(ds.time_coverage_start))
-                    if (isinstance(t, datetime.datetime)):
+                    if isinstance(t, datetime.datetime):
                         t = t.replace(tzinfo=pytz.utc, microsecond=0)
                     timeCoverStart = t
                 except ValueError:
@@ -1824,7 +1824,7 @@ class CMSAFChecker:
             if hasattr(ds,"time_coverage_end"):
                 try:
                     t = num2date(0, "days since {}".format(ds.time_coverage_end))
-                    if (isinstance(t, datetime.datetime)):
+                    if isinstance(t, datetime.datetime):
                         t = t.replace(tzinfo=pytz.utc, microsecond=0)
                     timeCoverEnd = t
                 except ValueError:
@@ -1864,7 +1864,7 @@ class CMSAFChecker:
             else:
                 print(f"{'':<8}{RC_ERR} missing mandatory attribute 'axis'")
                 rc = -1
-        elif (expAxis is not None):
+        elif expAxis is not None:
             if coordVar.axis != expAxis:
                 print(f"{'':<8}{RC_ERR} invalid value attribute 'axis={coordVar.axis}'")
                 rc = -1
@@ -1939,8 +1939,8 @@ class CMSAFChecker:
                     print(f"{'':<8}{RC_ERR} grid definition from file name '{resFile}' <--> and attributes '{resAttr}'")
 
             # check grid
-            if (coordRes is not None):
-                if (np.ma.count_masked(coord) > 0):
+            if coordRes is not None:
+                if np.ma.count_masked(coord) > 0:
                     print(f"{'':<8}{RC_ERR} {longName} contains missing data")
                     rc = 1
                 else:
@@ -1955,11 +1955,11 @@ class CMSAFChecker:
                     tmp      = np.absolute(np.subtract(meshExp, coord))
                     eps      = float_spacing(meshExp, coord)
                     indx     = np.where(tmp > eps)[0]
-                    if (len(indx) > 0):
+                    if len(indx) > 0:
                         print(f"{'':<8}{RC_ERR} at {len(indx)} locations:")
                         print(f"{'':<10}found:    {coord[indx]}")
                         print(f"{'':<10}expecting:{meshExp[indx]}")
-                        if (not self.lazy):
+                        if not self.lazy:
                             rc = 1
                         else:
                             print(f"{'':<8}{RC_INFO} Ignoring while beeing lazy")
@@ -1967,7 +1967,7 @@ class CMSAFChecker:
                     # test 0,0 [must not be in center]
                     tmp  = np.absolute(coord)
                     indx = np.where(tmp < eps)[0]
-                    if (len(indx) > 0):
+                    if len(indx) > 0:
                         rc = 1
                         print(f"{'':<8}{RC_ERR} {shortName}=0 is not allowed as {longName} center value.")
 
@@ -1984,7 +1984,7 @@ class CMSAFChecker:
                     if tmp in ds.getgrp(coordVar.group().path).variables:
                         boundsVar = ds.getgrp(coordVar.group().path).variables[tmp]
                 if boundsVar is not None:
-                    if (coordOrder == 1):
+                    if coordOrder == 1:
                         bounds = boundsVar[:]
                     else:
                         bounds = np.flip(boundsVar[:])
@@ -1992,7 +1992,7 @@ class CMSAFChecker:
                     print(f"{'':<8}{RC_ERR} Missing configured bounds variable '{tmp}'.")
                     rc = 1
 
-            if (bounds is None):
+            if bounds is None:
                 rc = 1
                 print(f"{'':<8}{RC_ERR} missing bounds for {longName} coordinate")
             else:
@@ -2011,35 +2011,35 @@ class CMSAFChecker:
                 # test coordinate within bounds
                 indx1 = np.where(bounds[:,0] > coord)[0]
                 indx2 = np.where(bounds[:,1] < coord)[0]
-                if (len(indx1) > 0 or len(indx2) > 0):
+                if len(indx1) > 0 or len(indx2) > 0:
                     rc = 1
                     print(f"{'':<8}{RC_ERR} {longName} values not within bounds")
 
                 # test for gaps in coordinate bounds
                 tmp = np.subtract(boundsVar[0:-2,1],boundsVar[1:-1,0])
                 indx = np.where(tmp > 0)[0]
-                if (len(indx) > 0):
+                if len(indx) > 0:
                     rc = 1
                     print(f"{'':<8}{RC_ERR} gaps in {longName} bounds")
 
                 # test for ovarlap in coordinate bounds
                 indx = np.where(tmp < 0)[0]
-                if (len(indx) > 0):
+                if len(indx) > 0:
                     rc = 1
                     print(f"{'':<8}{RC_ERR} {longName} bounds overlap")
 
                 # test bounds against global attribute
-                if (geoMinAttr is not None):
-                    if (geoMinAttr != bounds[0,0]):
+                if geoMinAttr is not None:
+                    if geoMinAttr != bounds[0,0]:
                         rc = 1
                         print(f"{'':<8}{RC_ERR} mismatch between {leftMaxName} {longName} bound '{boundsVar[0,0]}' and {geoMinAttrName} '{geoMinAttr}'")
-                if (geoMaxAttr is not None):
-                    if (geoMaxAttr != bounds[-1,1]):
+                if geoMaxAttr is not None:
+                    if geoMaxAttr != bounds[-1,1]:
                         rc = 1
                         print(f"{'':<8}{RC_ERR} mismatch between {rightMaxName} {longName} bound '{boundsVar[-1,1]}' and {geoMaxAttrName} '{geoMaxAttr}'")
 
             # print result
-            if (coordRes is not None):
+            if coordRes is not None:
                 print(f"{'':<8}[{coordMin!s} -> {coordMax!s} by {coordRes!s}]")
             else:
                 print(f"{'':<8}[{coordMin!s} -> {coordMax!s}]")
@@ -2118,7 +2118,7 @@ class CMSAFChecker:
                     print(f"{RC_ERR} incorrect data type of '{key}'\n")
 
         # no record status for swath data required
-        elif (not ds.isSwathData()):
+        elif not ds.isSwathData():
             rc = 1
             print(f"{RC_ERR} missing mandatory variable 'record_status'\n")
 
@@ -2180,16 +2180,16 @@ class CMSAFChecker:
             aLat  = None
             aTime = None
             for dim in var.get_dims():
-                if (aLon is None):
+                if aLon is None:
                     aLon = ds.matchCoordinate(dim, axisLon)
-                if (aLat is None):
+                if aLat is None:
                     aLat = ds.matchCoordinate(dim, axisLat)
-                if (aTime is None):
+                if aTime is None:
                     aTime = ds.matchCoordinate(dim, axisTime)
 
             # test dimensions, all variables with lat and lon must also have a time coordinate
-            if (aLon is not None and aLat is not None):
-                if (aTime is None):
+            if aLon is not None and aLat is not None:
+                if aTime is None:
                     rc = 1
                     print(f"{'':<4}{RC_ERR} {vName} :: missing time dimension")
 
@@ -2208,13 +2208,13 @@ class CMSAFChecker:
                     itRc = 1
                     for gvName in grp.variables:
                         gv = grp.variables[gvName]
-                        if (hasattr(gv, 'bounds') and gv.bounds == vNameB):
+                        if hasattr(gv, 'bounds') and gv.bounds == vNameB:
                             itRc = 0
                             break
-                        if (hasattr(gv, 'climatology') and gv.climatology == vNameB):
+                        if hasattr(gv, 'climatology') and gv.climatology == vNameB:
                             itRc = 0
                             break
-                if (itRc == 1):
+                if itRc == 1:
                     xList = listManSkip[vNameB] if vNameB in listManSkip else []
                     if item in listMan and item not in xList:
                         rc = 1
@@ -2227,7 +2227,7 @@ class CMSAFChecker:
             if hasattr(var,'flag_values') and hasattr(var,'flag_meanings'):
                 flagV = var.flag_values
                 flagM = var.flag_meanings.split(" ")
-                if (len(flagV) != len(flagM)):
+                if len(flagV) != len(flagM):
                     rc = 1
                     print(f"{'':<4}{RC_ERR} {vName} :: mismatch between flag_values and flag_value")
 
@@ -2307,7 +2307,7 @@ def main():
         print(f"CMSAF Standards path ({chr(i)}) '{p}'")
 
     # get a new checker object
-    if (args.reference == None):
+    if args.reference == None:
         inst = CMSAFChecker(search_paths=search_paths, version=args.version,
             coordinates=args.coordinates, lazy=args.lazy, ignore=args.ignore_attr,
             standard_file=args.standard_file)
@@ -2322,7 +2322,7 @@ def main():
         for root, dirs, names in os.walk(args.directory, followlinks=True):
             tmp = fnmatch.filter(names, args.files[0])
             for fn in tmp:
-                if (args.directory != root):
+                if args.directory != root:
                     continue
                 fnp=os.path.join(root,fn)
                 if os.access(fnp, os.R_OK):
@@ -2338,39 +2338,39 @@ def main():
 
     # decode first file name
     fileDelta = None
-    if (len(files) > 1 and args.missing is not None):
-        if (args.missing == "filename"):
+    if len(files) > 1 and args.missing is not None:
+        if args.missing == "filename":
             fileName = os.path.realpath(files[0])
             fileName = os.path.basename (fileName)
             fileAttr = re.match(CMSAF_NAMING_STANDARD, fileName)
             fileStep = fileAttr.group(2)
         else:
             fileStep = args.missing
-        if (fileStep == 'd'):
+        if fileStep == 'd':
             fileDelta = datetime.timedelta(days=1, hours=0, minutes=0, seconds=0)
-        elif (fileStep == 'm'):
+        elif fileStep == 'm':
             fileDelta = datetime.timedelta(days=31, hours=0, minutes=0, seconds=0)
-        elif (fileStep == 'h'):
+        elif fileStep == 'h':
             fileDelta = datetime.timedelta(days=0, hours=1, minutes=0, seconds=0)
-        elif (fileStep == 'M15'):
+        elif fileStep == 'M15':
             fileDelta = datetime.timedelta(days=0, hours=0, minutes=15, seconds=0)
 
     # loop files
     lastTime = None
     for index, file in enumerate(files):
         # test missing
-        if (fileDelta is not None):
+        if fileDelta is not None:
             currentFile = os.path.realpath(file)
             currentFile = os.path.basename (currentFile)
             currentTime = datetime.datetime.strptime(currentFile[5:17], "%Y%m%d%H%M")
             currentTime = currentTime.replace(tzinfo=pytz.utc)
-            if (lastTime is not None):
+            if lastTime is not None:
                 while 1:
                     nextTime = lastTime + fileDelta
-                    if (fileStep == 'm'):
+                    if fileStep == 'm':
                         nextTime = nextTime.replace(day=1)
                     fileDiff = currentTime-nextTime
-                    if (fileDiff.total_seconds() > 0):
+                    if fileDiff.total_seconds() > 0:
                         print(f"\n{'':=^80}\nMissing File for {nextTime.isoformat('T')}\n{'':=^80}")
                         res['MISSING'] += 1
                         lastTime = nextTime
@@ -2403,7 +2403,7 @@ def main():
     if (args.missing) and (fileDelta is not None):
         print(f"{res['MISSING']} files MISSING")
 
-    if (res['FAILED'] == 0):
+    if res['FAILED'] == 0:
         exit(0)
     else:
         exit(1)
