@@ -18,7 +18,7 @@ __version__ = "3.2.2"
 __prefix__  = ""
 STANDARD = ''
 
-CMSAF_NAMING_STANDARD = r'^([A-Z]{3})([dhimpswa])([ncfhmds])((?:19|20)\d\d)(0[1-9]|1[012])(0[1-9]|[12]\d|3[01])([01]\d|2[0-3])([0-5]\d)(\d{3})(\d{2})([0-9A-Z]{5})([A-Z0-9]{2})([A-Z0-9]{2})((?:\.hdf|\.hdf\.gz|\.gz|\.nc|\.nc\.gz){0,1})$'
+CMSAF_NAMING_STANDARD = r'^([A-Z]{3})([cdhimpswa])([ncfhmds])((?:19|20)\d\d)(0[1-9]|1[012])(0[1-9]|[12]\d|3[01])([01]\d|2[0-3])([0-5]\d)(\d{3})(\d{2})([0-9A-Z]{5})([A-Z0-9]{2})([A-Z0-9]{2})((?:\.hdf|\.hdf\.gz|\.gz|\.nc|\.nc\.gz){0,1})$'
 
 RC_ERR  = "## ERROR ##"
 RC_WARN = "## WARNING ##"
@@ -1241,6 +1241,9 @@ class CMSAFChecker:
                     print(f"{RC_ERR} ## expecting 'PT1H' as time_coverage_resolution for diurnal cycle")
                     tests['time'] = 1
                     timeResolution = decode_timeDuration("PT1H")
+            # monthly climatology
+            elif decode.group(2) == 'c' and decode.group(3) == 'm':
+                expRecords = 12
             elif decode.group(2) != 'i':
                 expRecords = 1
 
@@ -1253,7 +1256,7 @@ class CMSAFChecker:
                     expRecords = int(expRecords[0])
 
             # expect climate attribute
-            if decode.group(2) == 'm' and decode.group(3) == 'd':
+            if decode.group(2) == 'c' or decode.group(3) == 'd':
                 expClimate = True
 
             # expecting duration and resolution
