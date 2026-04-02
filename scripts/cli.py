@@ -536,7 +536,7 @@ class CMSAFChecker:
             try:
                 print(f"Reference File: '{self.refFile}'\n")
                 self.refDataset = DatasetX(self.refFile, mode='r')
-            except:
+            except Exception:
                 print("\nCould not open reference file, please check that NetCDF is formatted correctly.\n")
                 raise
 
@@ -641,7 +641,7 @@ class CMSAFChecker:
         except RuntimeError as detail:
             print(f"{RC_ERR} ", detail)
             return 1
-        except:
+        except Exception:
             print(f"{RC_ERR} Could not open file, please check that NetCDF is formatted correctly.\n".upper())
             return 1
 
@@ -1545,7 +1545,7 @@ class CMSAFChecker:
                         if (t is not None):
                             tSteps[it.index] = t
                     it.iternext()
-            except:
+            except Exception:
                 rc = 1
                 print(f"{'':<8}{RC_ERR} invalid time axis.")
 
@@ -1807,8 +1807,8 @@ class CMSAFChecker:
                     if (isinstance(t, datetime.datetime)):
                         t = t.replace(tzinfo=pytz.utc, microsecond=0)
                     timeCoverStart = t
-                except:
-                    print("f{'':<8}{RC_ERR} Unexpected time format: '{ds.time_coverage_start}'")
+                except ValueError:
+                    print(f"{'':<8}{RC_ERR} Unexpected time format: '{ds.time_coverage_start}'")
                 else:
                     if timeCoverStart > tSteps[0]:
                         print(f"{'':<8}{RC_ERR} first time record '{tSteps[0].isoformat()}' not within time_coverage_start attribute: '{timeCoverStart.isoformat()}'")
@@ -1824,7 +1824,7 @@ class CMSAFChecker:
                     if (isinstance(t, datetime.datetime)):
                         t = t.replace(tzinfo=pytz.utc, microsecond=0)
                     timeCoverEnd = t
-                except:
+                except ValueError:
                     print(f"{'':<8}{RC_ERR} Unexpected time format: {ds.time_coverage_end}")
                 else:
                     if timeCoverEnd < tSteps[-1]:
@@ -1889,7 +1889,7 @@ class CMSAFChecker:
                     if tmp_ > coordMin:
                         print(f"{'':<8}{RC_ERR} {geoMinAttrName} mismatch: {tmp_} > {coordMin}")
                         rc = 1
-                except:
+                except TypeError:
                     print(f"{'':<8}{RC_ERR} {geoMinAttrName}: unexpected data format")
                     rc = 1
                 else:
@@ -1903,7 +1903,7 @@ class CMSAFChecker:
                     if tmp_ < coordMax:
                         print(f"{'':<8}{RC_ERR} {geoMaxAttrName} mismatch: {tmp_} < {coordMax}")
                         rc = 1
-                except:
+                except TypeError:
                     print(f"{'':<8}{RC_ERR} {geoMaxAttrName}: unexpected data format")
                     rc = 1
                 else:
@@ -2242,7 +2242,7 @@ class CMSAFChecker:
             for item in ds.variable_id.split(","):
                 try:
                     var = ds.getvar(item)
-                except:
+                except (KeyError, IndexError):
                     rc = 1
                     print(f"{'':<4}{RC_ERR} missing variable '{item}'")
                 else:
