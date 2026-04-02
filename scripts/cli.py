@@ -7,6 +7,7 @@ import csv
 import datetime
 import os
 import re
+from typing import NamedTuple
 from xml.sax import ContentHandler, make_parser
 from xml.sax.handler import feature_namespaces
 
@@ -82,38 +83,48 @@ def cmsaf_decode_grid(filename):
     return resolution
 
 
+class TimeDuration(NamedTuple):
+    """Decoded ISO 8601 duration with each component as a plain integer."""
+    year:   int = 0
+    month:  int = 0
+    week:   int = 0
+    day:    int = 0
+    hour:   int = 0
+    minute: int = 0
+    second: int = 0
+
+
 def decode_timeDuration(duration):
     """
     Decode time duration strings
+
+    Parses ISO 8601 duration format (e.g. 'P1M', 'PT1H', 'P0000-01-00T00:00:00')
+    and returns a TimeDuration with each component as an integer.
+    Returns None if the string does not match either supported format.
     """
     regDuration1 = "^P(?:(?P<year>[0-9]+)Y)?(?:(?P<month>[0-9]+)M)?(?:(?P<week>[0-9]+)W)?(?:(?P<day>[0-9]+)D)?(?:T(?:(?P<hour>[0-9]+)?H)?(?:(?P<minute>[0-9]+)?M)?(?:(?P<second>[0-9]+)?S)?)?$"
     regDuration2 = "^P(?P<year>[0-9]{4})-(?P<month>[0-9]{2})-(?P<day>[0-9]{2})T(?P<hour>[0-9]{2}):(?P<minute>[0-9]{2}):(?P<second>[0-9]+)$"
 
     timeDuration = re.match(regDuration1, duration)
-    if (timeDuration is None):
+    if timeDuration is None:
         timeDuration = re.match(regDuration2, duration)
 
-    if (timeDuration is None):
-      return None
+    if timeDuration is None:
+        return None
 
-    result = np.zeros([7], dtype=np.float64)
-    if (timeDuration.group('year') is not None):
-        result[0] = np.float64(timeDuration.group('year'))
-    if (timeDuration.group('month') is not None):
-        result[1] = np.float64(timeDuration.group('month'))
-    if "week" in timeDuration.groupdict():
-        if (timeDuration.group('week') is not None):
-            result[2] = np.float64(timeDuration.group('week'))
-    if (timeDuration.group('day') is not None):
-        result[3] = np.float64(timeDuration.group('day'))
-    if (timeDuration.group('hour') is not None):
-        result[4] = np.float64(timeDuration.group('hour'))
-    if (timeDuration.group('minute') is not None):
-        result[5] = np.float64(timeDuration.group('minute'))
-    if (timeDuration.group('second') is not None):
-        result[6] = np.float64(timeDuration.group('second'))
+    def _int(group):
+        v = timeDuration.group(group)
+        return int(v) if v is not None else 0
 
-    return result
+    return TimeDuration(
+        year   = _int('year'),
+        month  = _int('month'),
+        week   = _int('week') if 'week' in timeDuration.groupdict() else 0,
+        day    = _int('day'),
+        hour   = _int('hour'),
+        minute = _int('minute'),
+        second = _int('second'),
+    )
 
 
 class CMSAFStandard(ContentHandler):
@@ -1226,7 +1237,7 @@ class CMSAFChecker:
                 expRecords = 24
                 if (timeResolution is None):
                     timeResolution = decode_timeDuration("PT1H")
-                elif (not np.array_equal(timeResolution,decode_timeDuration("PT1H"))):
+                elif (timeResolution != decode_timeDuration("PT1H")):
                     print(f"{RC_ERR} ## expecting 'PT1H' as time_coverage_resolution for diurnal cycle")
                     tests['time'] = 1
                     timeResolution = decode_timeDuration("PT1H")
@@ -1236,8 +1247,8 @@ class CMSAFChecker:
             # get expected number of records from time_coverage_resolution and time_coverage_duration
             if (decode.group(2) == 'i'):
                 if (timeDuration is not None) and (timeResolution is not None):
-                    td = datetime.timedelta(days=timeDuration[3],   hours=timeDuration[4],   minutes=timeDuration[5],   seconds=timeDuration[6])
-                    tr = datetime.timedelta(days=timeResolution[3], hours=timeResolution[4], minutes=timeResolution[5], seconds=timeResolution[6])
+                    td = datetime.timedelta(days=timeDuration.day,   hours=timeDuration.hour,   minutes=timeDuration.minute,   seconds=timeDuration.second)
+                    tr = datetime.timedelta(days=timeResolution.day, hours=timeResolution.hour, minutes=timeResolution.minute, seconds=timeResolution.second)
                     expRecords = divmod(td.total_seconds(), tr.total_seconds())
                     expRecords = int(expRecords[0])
 
@@ -1258,8 +1269,8 @@ class CMSAFChecker:
                 expTimeResolution = ('PT1H', 'P0000-00-00T01:00:00')
                 expTimeDuration   = ('P1D', 'P0000-00-01T00:00:00', 'PT1H', 'P0000-00-00T01:00:00')
                 if (timeDuration is not None) and (timeResolution is not None):
-                    td = datetime.timedelta(days=timeDuration[3],   hours=timeDuration[4],   minutes=timeDuration[5],   seconds=timeDuration[6])
-                    tr = datetime.timedelta(days=timeResolution[3], hours=timeResolution[4], minutes=timeResolution[5], seconds=timeResolution[6])
+                    td = datetime.timedelta(days=timeDuration.day,   hours=timeDuration.hour,   minutes=timeDuration.minute,   seconds=timeDuration.second)
+                    tr = datetime.timedelta(days=timeResolution.day, hours=timeResolution.hour, minutes=timeResolution.minute, seconds=timeResolution.second)
                     expRecords = divmod(td.total_seconds(), tr.total_seconds())
                     expRecords = int(expRecords[0])
 
@@ -1661,20 +1672,20 @@ class CMSAFChecker:
                 # next expected record
                 if expResolution is not None:
                     nRecord = itRecord
-                    if (expResolution[0] > 0):
-                        nRecord = nRecord.replace(year=nRecord.year+int(expResolution[0]))
-                    if (expResolution[1] > 0):
-                        nm = nRecord.month + int(expResolution[1])
+                    if (expResolution.year > 0):
+                        nRecord = nRecord.replace(year=nRecord.year+expResolution.year)
+                    if (expResolution.month > 0):
+                        nm = nRecord.month + expResolution.month
                         ny = nRecord.year
                         if (nm > 12):
                             ny += 1
                             nm -= 12
                         nRecord = nRecord.replace(year=ny,month=nm)
-                    tr = datetime.timedelta(days=expResolution[3], hours=expResolution[4], minutes=expResolution[5], seconds=expResolution[6])
+                    tr = datetime.timedelta(days=expResolution.day, hours=expResolution.hour, minutes=expResolution.minute, seconds=expResolution.second)
                     nRecord += tr
 
                     # add one day during a leap year for last feb pentad period
-                    if expResolution[3] == 5:
+                    if expResolution.day == 5:
                         if (nRecord.timetuple().tm_yday == 61 and cal.isleap(nRecord.year)):
                             nRecord += datetime.timedelta(days=1)
 
@@ -1709,24 +1720,24 @@ class CMSAFChecker:
                         num_days = 0
 
                         # years
-                        if (timeDuration[0] > 1):
-                            et = lb + relativedelta(years=int(timeDuration[0])-1)
+                        if (timeDuration.year > 1):
+                            et = lb + relativedelta(years=timeDuration.year-1)
                             num_days = (et-lb).days
                             if (cal.isleap(et.year) and (rb-et).days==29):
                                 num_days += 1
 
                         # months
-                        if (timeDuration[1] > 0):
-                            et = lb + relativedelta(months=int(timeDuration[1])-1)
+                        if (timeDuration.month > 0):
+                            et = lb + relativedelta(months=timeDuration.month-1)
                             num_days = (et-lb).days + cal.monthrange(et.year, et.month)[1] - 1
 
                         # days
-                        num_days += max(int(timeDuration[3])-1,0)
+                        num_days += max(timeDuration.day-1, 0)
 
                         # less than a day
-                        rest = (relativedelta(hours=max(int(timeDuration[4])-1,0))
-                                 + relativedelta(minute=max(int(timeDuration[5])-1,0))
-                                 + relativedelta(second=max(int(timeDuration[6])-1,0)))
+                        rest = (relativedelta(hours=max(timeDuration.hour-1, 0))
+                                 + relativedelta(minute=max(timeDuration.minute-1, 0))
+                                 + relativedelta(second=max(timeDuration.second-1, 0)))
 
                         timeBoundRight  = rb - (relativedelta(days=num_days) + rest)
 
