@@ -7,9 +7,9 @@ import csv
 import datetime
 import os
 import re
+from types import SimpleNamespace
 from typing import NamedTuple
-from xml.sax import ContentHandler, make_parser
-from xml.sax.handler import feature_namespaces
+import xml.etree.ElementTree as ET
 
 import numpy as np
 import pytz
@@ -127,124 +127,56 @@ def decode_timeDuration(duration):
     )
 
 
-class CMSAFStandard(ContentHandler):
+def _parse_standard(filename: str) -> SimpleNamespace:
     """
-    XML Parser class for CM SAF attributes
+    Parse a CM SAF metadata standard XML file.
 
-    Parse the xml standard table, reading all entries into a dictionary
+    Returns a SimpleNamespace with attributes:
+      .dict           — {id: entry_dict} for all <entry> elements
+      .version_number — str
+      .last_modified  — str
+      .include        — str | None  (name of included base standard, if present)
+
+    Each entry_dict has keys: type, required, evaluate, list, join,
+    content (list of dicts), regex (list of dicts), keywords (list of str).
     """
+    tree = ET.parse(filename)
+    root = tree.getroot()
 
-    def __init__(self):
-        self.inContent = False
-        self.inRegex = False
-        self.inKeywords = False
-        self.inVersionNoContent = False
-        self.inLastModifiedContent = False
-        self.inInclude = False
-        self.dict = {}
-        self.entry = {}
-        self.content = ""
-        self.regex = {}
-        self.keywords = ""
+    include_el = root.find('include')
 
-    def startElement(self, name, attrs):
-      # attributes
-      if name == 'entry':
-        self.entry = {
-          'type':     normalize_whitespace(attrs.get('type', "s")),
-          'required': normalize_whitespace(attrs.get('required', "no")),
-          'evaluate': normalize_whitespace(attrs.get('evaluate', "no")),
-          'list' :    normalize_whitespace(attrs.get('list', "")),
-          'join':     attrs.get('join', "or").strip(' '),
-          'content':  [],
-          'regex':    [],
-          'keywords':  []
+    entry_dict = {}
+    for entry in root.iter('entry'):
+        eid = normalize_whitespace(entry.get('id', ''))
+        entry_dict[eid] = {
+            'type':     normalize_whitespace(entry.get('type',     's')),
+            'required': normalize_whitespace(entry.get('required', 'no')),
+            'evaluate': normalize_whitespace(entry.get('evaluate', 'no')),
+            'list':     normalize_whitespace(entry.get('list',     '')),
+            'join':     entry.get('join', 'or').strip(),
+            'content':  [
+                {'value': normalize_whitespace(c.text or ''),
+                 'type':  c.get('type', 'string').strip()}
+                for c in entry.findall('content')
+            ],
+            'regex':    [
+                {'value': (r.text or '').strip(),
+                 'warn':  r.get('warn', '').strip(),
+                 'type':  r.get('type', 'string').strip()}
+                for r in entry.findall('regex')
+            ],
+            'keywords': [
+                normalize_whitespace(k.text or '')
+                for k in entry.findall('keywords')
+            ],
         }
-        self.this_id = normalize_whitespace(attrs.get('id', ""))
 
-      # possible content
-      elif name == 'content':
-        self.inContent = True
-        self.content = {}
-        self.content['value'] = ""
-        self.content['type']  = attrs.get('type', "string").strip(' ');
-
-      # regular expression
-      elif name == 'regex':
-        self.inRegex = True
-        self.regex = {}
-        self.regex['value'] = ""
-        self.regex['warn']  = attrs.get('warn', "").strip(' ')
-        self.regex['type']  = attrs.get('type', "string").strip(' ');
-
-      # keyword list
-      elif name == 'keywords':
-        self.inKeywords = True
-        self.keywords = ""
-
-      elif name == 'version_number':
-        self.inVersionNoContent = True
-        self.version_number = ""
-
-      elif name == 'last_modified':
-        self.inLastModifiedContent = True
-        self.last_modified = ""
-
-      elif name == 'include':
-        self.inInclude = True
-        self.include = ""
-
-    def characters(self, ch):
-
-        if self.inContent:
-          self.content['value'] = self.content ['value']+ ch
-
-        elif self.inRegex:
-          self.regex['value'] = self.regex['value'] + ch
-
-        elif self.inKeywords:
-          self.keywords = self.keywords + ch
-
-        elif self.inVersionNoContent:
-            self.version_number = self.version_number + ch
-
-        elif self.inLastModifiedContent:
-            self.last_modified = self.last_modified + ch
-
-        elif self.inInclude:
-            self.include = self.include + ch
-
-    def endElement(self, name):
-        if name == 'entry':
-            self.dict[self.this_id] = self.entry.copy()
-            self.entry.clear()
-
-        elif name == 'content':
-            self.inContent = False
-            self.entry['content'].append(self.content)
-
-        elif name == 'regex':
-            self.inRegex = False
-            self.entry['regex'].append(self.regex)
-
-        elif name == 'keywords':
-          self.inKeywords = False
-          self.entry['keywords'].append(self.keywords)
-
-        # If it's the end of the version_number element, save it
-        elif name == 'version_number':
-            self.inVersionNoContent = False
-            self.version_number = normalize_whitespace(self.version_number)
-
-        # If it's the end of the last_modified element, save the last modified date
-        elif name == 'last_modified':
-            self.inLastModifiedContent = False
-            self.last_modified = normalize_whitespace(self.last_modified)
-
-        # If it's the end of the include element, save it
-        elif name == 'include':
-            self.inInclude = False
-            self.include = normalize_whitespace(self.include)
+    return SimpleNamespace(
+        version_number = normalize_whitespace(root.findtext('version_number', '')),
+        last_modified  = normalize_whitespace(root.findtext('last_modified',  '')),
+        include        = normalize_whitespace(include_el.text) if include_el is not None else None,
+        dict           = entry_dict,
+    )
 
 
 def _find_file(filename: str, search_paths: list) -> str | None:
@@ -558,11 +490,6 @@ class CMSAFChecker:
         resolved independently through the same search_paths list so a newer
         version of any individual file in an earlier path takes precedence.
         """
-        parser = make_parser()
-        parser.setFeature(feature_namespaces, 0)
-        self.std_name_dh = CMSAFStandard()
-        parser.setContentHandler(self.std_name_dh)
-
         # locate the standard XML
         if self.standard_file is not None:
             fn = _find_file(self.standard_file, self.search_paths)
@@ -578,30 +505,28 @@ class CMSAFChecker:
 
         print(f"Using standard file: '{fn}'")
         try:
-            parser.parse(fn)
+            self.std_name_dh = _parse_standard(fn)
         except IOError as detail:
             print(detail)
             raise
 
         # locate and load any included XML, searched independently
-        if hasattr(self.std_name_dh, 'include'):
+        if self.std_name_dh.include:
             inc_fn = _find_file(self.std_name_dh.include, self.search_paths)
             if inc_fn is None:
                 print(f"No such file '{self.std_name_dh.include}'.")
                 exit(1)
             print(f"Including '{inc_fn}'.")
-            include_ = CMSAFStandard()
-            parser.setContentHandler(include_)
             try:
-                parser.parse(inc_fn)
+                include_ = _parse_standard(inc_fn)
             except IOError as detail:
                 print(detail)
                 raise
 
-            # update dict
-            tmp = self.std_name_dh.dict
-            self.std_name_dh.dict = include_.dict
-            self.std_name_dh.dict.update(tmp)
+            # included file is the base; main file entries override
+            merged = include_.dict
+            merged.update(self.std_name_dh.dict)
+            self.std_name_dh.dict = merged
 
 
     def __del__(self):
