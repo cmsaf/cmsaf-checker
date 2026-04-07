@@ -1392,7 +1392,7 @@ class CMSAFChecker:
         return rc
 
 
-    def _checkCoordinatesTime(self, timeC, expClimate=False, expRecords=None, expResolution=None, recordStatus={}):
+    def _checkCoordinatesTime(self, timeC, expClimate=False, expRecords=None, expResolution=None, recordStatus=None):
         """
         Check time coordinates of a netcdf file.
         """
@@ -1404,6 +1404,9 @@ class CMSAFChecker:
         timeCoverStart = None
         timeCoverEnd = None
         calendar = "standard"
+
+        if recordStatus is None:
+            recordStatus = {}
 
         if hasattr(ds,"time_coverage_duration"):
             timeDuration = decode_timeDuration(ds.time_coverage_duration)
