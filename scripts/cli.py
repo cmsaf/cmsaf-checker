@@ -871,35 +871,55 @@ class CMSAFChecker:
                         # loop matches
                         for mIndex, mItem in enumerate(attrMatch):
                             if mItem['type'] == "keyword":
-                                # split keywords
+                                # split keyword path on ' > ' separator
                                 entryList = re.split(" *> *", a)
-                                # find elements using last entry in list
+                                entryItem = " > ".join(entryList)
+
+                                # find all vocabulary paths whose leaf matches the last element
                                 kwItem = kw.findKeywordList(entryList[-1])
                                 if not kwItem:
-                                    print(f"{RC_ERR} Keyword not found in List :: '{entryList[-1]}'")
+                                    print(f"{RC_ERR} '{entryList[-1]}' not found as a keyword leaf in the vocabulary")
                                     self.err += 1
                                     if key not in self.errAttr:
                                         self.errAttr.append(key)
                                 else:
-                                    # check all entries
-                                    entryItem = " > ".join(entryList)
-                                    entryP = ""
+                                    # Build a pattern that matches the supplied path at the right end.
+                                    # For Short_Name-structured vocabularies (providers, instruments),
+                                    # a single term may be the Short_Name at the start of the path,
+                                    # so match it as any complete path segment.
+                                    # For science keyword hierarchies, a single term must be the
+                                    # leaf (rightmost element), so anchor to the end only.
                                     if len(entryList) == 1:
-                                        entryP = ".*" + re.escape(entryItem) + ".*"
+                                        if 'Short_Name' in (kw.groups or []):
+                                            entryP = "(^| > )" + re.escape(entryItem) + "( > |$)"
+                                        else:
+                                            entryP = "(^| > )" + re.escape(entryItem) + "$"
                                     else:
                                         entryP = ".*" + re.escape(entryItem) + "$"
-                                    entryHits = 0
-                                    for item in kwItem:
-                                        if re.search(entryP, item) is not None:
-                                            entryHits += 1
-                                            print(f"decoded as '{item}'")
-                                    if entryHits != 1:
-                                      self.err += 1
-                                      print(f"{RC_ERR}keyword classification incorrect, expecting one of:\n##")
-                                      print("\n## ".join(kwItem))
-                                      if key not in self.errAttr:
-                                          self.errAttr.append(key)
+
+                                    matchingPaths = [item for item in kwItem
+                                                     if re.search(entryP, item) is not None]
+                                    entryHits = len(matchingPaths)
+
+                                    if entryHits == 1:
+                                        print(f"decoded as '{matchingPaths[0]}'")
+                                        or_passed = True
+                                    elif entryHits == 0:
+                                        print(f"{RC_ERR} keyword path '{entryItem}' not found; "
+                                              f"valid paths containing '{entryList[-1]}':")
+                                        for item in kwItem:
+                                            print(f"  {item}")
+                                        self.err += 1
+                                        if key not in self.errAttr:
+                                            self.errAttr.append(key)
                                     else:
+                                        print(f"{RC_ERR} keyword '{entryItem}' is ambiguous "
+                                              f"({entryHits} matches); be more specific, e.g.:")
+                                        for item in matchingPaths:
+                                            print(f"  {item}")
+                                        self.err += 1
+                                        if key not in self.errAttr:
+                                            self.errAttr.append(key)
                                         attrHits[hitsIndex] += 1
 
                 # evaluate hits
