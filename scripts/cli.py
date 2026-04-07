@@ -240,36 +240,25 @@ class Keywords:
 
         return 0
 
-    def findKeyword(self,keyword="Version"):
+    def findKeyword(self, keyword="Version"):
         result = []
 
         keyword = keyword.upper()
         for key, kw in self.keywordList.items():
             if key == keyword:
                 result.append(kw)
-            if 'Short_Name' in kw:
-                if kw['Long_Name'].upper() == keyword:
+                continue
+            # Search all columns derived from the CSV header, with one
+            # special case: 'Term' is only matched when Variable_Level_1
+            # is empty (i.e. the keyword lives at the Term level, not deeper).
+            for col in self.groups or []:
+                if col not in kw:
+                    continue
+                if col == 'Term' and kw.get('Variable_Level_1', '') != '':
+                    continue
+                if kw[col].upper() == keyword:
                     result.append(kw)
-                elif kw['Short_Name'].upper() == keyword:
-                    result.append(kw)
-                elif 'Sub_Category' in kw:
-                    if kw['Sub_Category'].upper() == keyword:
-                        result.append(kw)
-            if 'Series_Entity' in kw:
-                if kw['Series_Entity'].upper() == keyword:
-                    result.append(kw)
-            if 'Variable_Level_1' in kw:
-                if kw['Variable_Level_1'].upper() == keyword:
-                    result.append(kw)
-            if 'Variable_Level_2' in kw:
-                if kw['Variable_Level_2'].upper() == keyword:
-                    result.append(kw)
-            if 'Variable_Level_3' in kw:
-                if kw['Variable_Level_3'].upper() == keyword:
-                    result.append(kw)
-            if 'Term' in kw and kw['Variable_Level_1'] == "":
-                if kw['Term'].upper() == keyword:
-                    result.append(kw)
+                    break
 
         return result
 
