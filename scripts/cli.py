@@ -212,28 +212,31 @@ class Keywords:
         try:
             fh = open(self.filename, "r")
         except IOError as detail:
-            print (detail)
+            print(detail)
             return 2
 
-        # cvs reader
-        reader = csv.reader(fh, delimiter=',', quotechar='"')
+        with fh:
+            # csv reader
+            reader = csv.reader(fh, delimiter=',', quotechar='"')
 
-        # loop lines
-        for row in reader:
-            if 'Keyword Version' and 'Revision' in row:
-                meta = re.match(r'.*Keyword Version: (\d\.\d).*', row[0])
-                self.keywordList['Version'] = meta.group(1)
-            elif (not self.groups) and ('UUID' in row):
-                self.groups = row
-                self.groups.pop()
-            elif self.groups:
-                uuid = row.pop().strip('"')
-                if len(row) == len(self.groups):
-                    kw = {}
-                    for index, item in enumerate(self.groups):
-                        kw[item] = row[index].strip()
+            # loop lines
+            for row in reader:
+                if not row:
+                    continue
+                if 'Keyword Version' in row[0]:
+                    meta = re.match(r'.*Keyword Version:\s*([\d.]+)', row[0])
+                    if meta:
+                        self.keywordList['Version'] = meta.group(1)
+                elif not self.groups and 'UUID' in row:
+                    self.groups = row
+                    self.groups.pop()
+                elif self.groups:
+                    uuid = row.pop().strip('"')
+                    if len(row) == len(self.groups):
+                        kw = {}
+                        for index, item in enumerate(self.groups):
+                            kw[item] = row[index].strip()
                         self.keywordList[uuid] = kw
-        fh.close()
 
         return 0
 
