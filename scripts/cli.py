@@ -248,6 +248,7 @@ class Keywords:
             if key == keyword:
                 result.append(kw)
                 continue
+
             # Search all columns derived from the CSV header, with one
             # special case: 'Term' is only matched when Variable_Level_1
             # is empty (i.e. the keyword lives at the Term level, not deeper).
@@ -742,15 +743,17 @@ class CMSAFChecker:
 
                 # start with empty list
                 attrList = []
-                attrHits = []
 
-                # empty hits lists
-                for i in std['content']:
-                    attrHits.append(0)
-                for i in std['regex']:
-                    attrHits.append(0)
-                for i in std['keywords']:
-                    attrHits.append(0)
+                # join=or:  did any validator fire for any list element?
+                or_passed = False
+
+                # join=and: which required content values have been seen?
+                and_seen     = set()
+
+                # and_required covers <content> values only — <regex> elements act as format
+                # guards on whatever value is present, not as independently required entries.
+                # If join=and with <regex> is ever needed, revisit this assumption.
+                and_required = {item['value'] for item in std['content']}
 
                 # make a list if attribute is defined as a list of values
                 try:
@@ -780,19 +783,18 @@ class CMSAFChecker:
                     print(a)
 
                     # check attribute content
-                    hitsIndex = 0
                     if len(std['content']) > 0:
 
-                        # loop possible entries
-                        validIndex = None
-                        for index, item in enumerate(std['content']):
-                            if item['value'] == a:
-                                validIndex = hitsIndex+index
-                                attrMatch.append(item)
+                        # find the first matching content entry
+                        matched_item = next(
+                            (item for item in std['content'] if item['value'] == a),
+                            None,
+                        )
 
-                        # test if valid attribute
-                        if not validIndex == None:
-                            attrHits[validIndex] += 1
+                        if matched_item is not None:
+                            or_passed = True
+                            and_seen.add(matched_item['value'])
+                            attrMatch.append(matched_item)
                         else:
                             if key in self.gIgnoreAtt:
                                 print(f"{RC_INFO} Ignoring incorrect attribute content '{key}'")
@@ -809,22 +811,21 @@ class CMSAFChecker:
                                     self.errAttr.append(key)
 
                     # check attribute content with regular expression
-                    hitsIndex += len(std['content'])
                     if len(std['regex']) > 0:
-                        validIndex = None
-                        for index, item in enumerate(std['regex']):
-                          if re.search(item['value'], a):
-                            if item['warn'] != "":
-                                print(f"{RC_WARN} {item['warn']}")
-                                self.warn += 1
-                                if key not in self.warnAttr:
-                                    self.warnAttr.append(key)
-                            else:
-                                validIndex = hitsIndex+index
-                                attrMatch.append(item)
+                        regex_matched = False
+                        for item in std['regex']:
+                            if re.search(item['value'], a):
+                                if item['warn'] != "":
+                                    print(f"{RC_WARN} {item['warn']}")
+                                    self.warn += 1
+                                    if key not in self.warnAttr:
+                                        self.warnAttr.append(key)
+                                else:
+                                    regex_matched = True
+                                    attrMatch.append(item)
 
-                        if not validIndex == None:
-                            attrHits[validIndex] += 1
+                        if regex_matched:
+                            or_passed = True
                         else:
                             if key in self.gIgnoreAtt:
                                 print(f"{RC_INFO} Ignoring incorrect attribute content '{key}'")
@@ -839,7 +840,6 @@ class CMSAFChecker:
                                     self.errAttr.append(key)
 
                     # check keyword list
-                    hitsIndex += len(std['regex'])
                     if len(std['keywords']) > 0:
                         # read new keyword list from file
                         keywordsFn = std['keywords'][0]
@@ -920,30 +920,23 @@ class CMSAFChecker:
                                         self.err += 1
                                         if key not in self.errAttr:
                                             self.errAttr.append(key)
-                                        attrHits[hitsIndex] += 1
 
                 # evaluate hits
-                if len(attrList) > 1:
+                if len(attrList) >= 1:
                     if std['join'].lower() == "or":
-                        total = 0
-                        for i in attrHits:
-                            total += i
-                        if (total == 0) and (keyRc == 0):
-                          print(f"{RC_ERR}missing a correct value for attribute '{key}'")
-                          keyRc = 1
-                          self.err += 1
-                          if key not in self.errAttr:
-                              self.errAttr.append(key)
+                        if not or_passed and keyRc == 0:
+                            print(f"{RC_ERR} missing a correct value for attribute '{key}'")
+                            keyRc = 1
+                            self.err += 1
+                            if key not in self.errAttr:
+                                self.errAttr.append(key)
                     elif std['join'].lower() == "and":
-                        if attrHits.count(0) > 0:
-                            hitsIndex = 0
-                            for index, item in enumerate(std['content']):
-                                if attrHits[hitsIndex+index] == 0:
-                                    print(f"{RC_ERR} missing required specific attribute content :: '{item['value']}'")
-                                    keyRc = 1
-                                    self.err += 1
-                                    if key not in self.errAttr:
-                                        self.errAttr.append(key)
+                        for value in sorted(and_required - and_seen):
+                            print(f"{RC_ERR} missing required specific attribute content :: '{value}'")
+                            keyRc = 1
+                            self.err += 1
+                            if key not in self.errAttr:
+                                self.errAttr.append(key)
 
         if self.err > 0:
             rc = 1
