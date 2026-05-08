@@ -14,7 +14,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import pytz
 
-__version__ = "3.2.3"
+__version__ = "3.2.4"
 __prefix__  = ""
 STANDARD = ''
 
