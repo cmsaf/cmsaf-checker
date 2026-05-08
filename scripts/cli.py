@@ -723,17 +723,25 @@ class CMSAFChecker:
                     self.err += 1
                     self.errAttr.append(key)
 
-                # report empty attribute
+                # report empty string attributes
                 if attrType == 's':
                     if len(attr) == 0:
                         if std['required'] == "yes":
-                            print(f"{RC_ERR} empty required attribute")
-                            self.err += 1
-                            self.errAttr.append(key)
+                            if key in self.gIgnoreAtt:
+                                print(f"{RC_INFO} Ignoring empty required attribute")
+                                self.info += 1
+                                if key not in self.infoAttr:
+                                    self.infoAttr.append(key)
+                            else:
+                                print(f"{RC_ERR} empty required attribute")
+                                self.err += 1
+                                if key not in self.errAttr:
+                                    self.errAttr.append(key)
                         else:
                             print(f"{RC_INFO} empty attribute")
                             self.info += 1
-                            self.infoAttr.append(key)
+                            if key not in self.infoAttr:
+                                self.infoAttr.append(key)
                         continue
 
                 # skip non string from further checks
