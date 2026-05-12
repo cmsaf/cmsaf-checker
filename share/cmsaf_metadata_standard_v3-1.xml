@@ -1,14 +1,16 @@
 <?xml version="1.0"?>
 <cmsaf_metadata_standard xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
    <version_number>3.1.1</version_number>
-   <last_modified>2026-03-12</last_modified>
+   <last_modified>2026-05-12</last_modified>
    <institution>CM SAF</institution>
    <contact>karsten.fennig@dwd.de</contact>
 
    <entry id="title" type="s" required="yes">
+     <regex>^.+$</regex>
    </entry>
 
    <entry id="summary" type="s" required="yes">
+     <regex>^.+$</regex>
    </entry>
 
    <entry id="id" type="s" required="yes">

@@ -14,7 +14,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import pytz
 
-__version__ = "3.2.4"
+__version__ = "3.2.5"
 __prefix__  = ""
 STANDARD = ''
 
@@ -280,6 +280,15 @@ class Keywords:
         return kwList
 
 
+def _is_coordinate_variable(var) -> bool:
+    """Return True if *var* is a CF coordinate variable.
+
+    A coordinate variable is one-dimensional and its name must equal its
+    sole dimension name (CF Conventions §1.2).
+    """
+    return len(var.dimensions) == 1 and var.name == var.dimensions[0]
+
+
 class DatasetX():
     """
     Expand standard python Dataset netcdf4 class
@@ -375,19 +384,29 @@ class DatasetX():
 
     def getCoordinates(self, standardName, shortName=[]):
         """
-        Find coordinate variables
+        Find coordinate variables.
+
+        A candidate must be a CF coordinate variable: one-dimensional with its
+        variable name equal to its dimension name (_is_coordinate_variable).
         """
         axis = self.getVariableByStandardName(standardName)
         if len(axis) == 0:
             for vName in shortName:
                 axis = self.getVariableByName(vName)
-                for item in axis.keys():
-                    print (f"## WARNING ##: missing standard name attribute for '{item}'")
+                for item in list(axis.keys()):
+                    if not _is_coordinate_variable(self._ds[item]):
+                        axis.pop(item)
+                        continue
+                    print(f"## WARNING ##: missing standard name attribute for '{item}'")
         else:
             for item in list(axis.keys()):
-                if hasattr(self._ds[item],"long_name"):
+                if not _is_coordinate_variable(self._ds[item]):
+                    axis.pop(item)
+                    continue
+                var = self._ds[item]
+                if hasattr(var, "long_name"):
                     # filter sub satellite geolocation
-                    if re.match(r'^.*sub.satellite.*$', getattr(self._ds[item],'long_name')):
+                    if re.match(r'^.*sub.satellite.*$', var.long_name):
                         axis.pop(item)
 
         return(axis)
