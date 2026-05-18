@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <cmsaf_metadata_standard xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
    <version_number>3.1.1</version_number>
-   <last_modified>2026-05-12</last_modified>
+   <last_modified>2026-05-18</last_modified>
    <institution>CM SAF</institution>
-   <contact>karsten.fennig@dwd.de</contact>
+   <contact>contact.cmsaf@dwd.de</contact>
 
    <entry id="title" type="s" required="yes">
      <regex>^.+$</regex>
@@ -204,6 +204,110 @@
    <entry id="lineage" type="s" required="yes">
      <regex>^prov:wasDerivedFrom .*;$</regex>
    </entry>
+
+
+   <!-- ================================================================ -->
+   <!-- Variable attribute rules                                          -->
+   <!-- scope values (comma-separated list):                             -->
+   <!--   all          — always applies (default)                        -->
+   <!--   swath        — swath data only                                 -->
+   <!--   grid         — non-swath data (regular or native projection)   -->
+   <!--   regular_grid — non-swath with a known lat/lon resolution       -->
+   <!--   native_grid  — non-swath on a native projection grid           -->
+   <!--   seviri_grid  — non-swath on the native SEVIRI grid (code 05)   -->
+   <!-- ================================================================ -->
+
+   <variable standard_name="time" required="yes" scope="all" coordinate="yes">
+     <attribute id="axis" type="s" required="yes">
+       <content>T</content>
+     </attribute>
+     <attribute id="units" type="s" required="yes">
+       <regex>^.+ since [-0-9]{4}</regex>
+     </attribute>
+     <attribute id="calendar" type="s" required="no">
+       <content>standard</content>
+       <content>gregorian</content>
+       <content>proleptic_gregorian</content>
+     </attribute>
+   </variable>
+
+   <variable standard_name="latitude" required="yes" scope="regular_grid" coordinate="yes">
+     <attribute id="axis" type="s" required="yes">
+       <content>Y</content>
+     </attribute>
+     <attribute id="units" type="s" required="yes">
+       <regex>^degrees?_north$</regex>
+     </attribute>
+     <attribute id="standard_name" type="s" required="yes">
+       <content>latitude</content>
+     </attribute>
+   </variable>
+
+   <variable standard_name="latitude" required="yes" scope="polar_grid">
+     <attribute id="axis" type="s" required="yes">
+       <content>Y</content>
+     </attribute>
+     <attribute id="units" type="s" required="yes">
+       <regex>^degrees?_north$</regex>
+     </attribute>
+     <attribute id="standard_name" type="s" required="yes">
+       <content>latitude</content>
+     </attribute>
+   </variable>
+
+   <variable standard_name="longitude" required="yes" scope="regular_grid" coordinate="yes">
+     <attribute id="axis" type="s" required="yes">
+       <content>X</content>
+     </attribute>
+     <attribute id="units" type="s" required="yes">
+       <regex>^degrees?_east$</regex>
+     </attribute>
+     <attribute id="standard_name" type="s" required="yes">
+       <content>longitude</content>
+     </attribute>
+   </variable>
+
+   <variable standard_name="longitude" required="yes" scope="polar_grid">
+     <attribute id="axis" type="s" required="yes">
+       <content>X</content>
+     </attribute>
+     <attribute id="units" type="s" required="yes">
+       <regex>^degrees?_east$</regex>
+     </attribute>
+     <attribute id="standard_name" type="s" required="yes">
+       <content>longitude</content>
+     </attribute>
+   </variable>
+
+
+   <variable standard_name="projection_x_angular_coordinate" required="yes" scope="seviri_grid" coordinate="yes">
+     <attribute id="axis" type="s" required="yes">
+       <content>X</content>
+     </attribute>
+     <attribute id="units" type="s" required="yes">
+       <content>radian</content>
+     </attribute>
+     <attribute id="standard_name" type="s" required="yes">
+       <content>projection_x_angular_coordinate</content>
+     </attribute>
+   </variable>
+
+   <variable standard_name="projection_y_angular_coordinate" required="yes" scope="seviri_grid" coordinate="yes">
+     <attribute id="axis" type="s" required="yes">
+       <content>Y</content>
+     </attribute>
+     <attribute id="units" type="s" required="yes">
+       <content>radian</content>
+     </attribute>
+     <attribute id="standard_name" type="s" required="yes">
+       <content>projection_y_angular_coordinate</content>
+     </attribute>
+   </variable>
+
+   <variable name="record_status" required="yes" scope="grid">
+     <attribute id="flag_values"   required="yes"/>
+     <attribute id="flag_meanings" required="yes"/>
+   </variable>
 
 </cmsaf_metadata_standard>
 

@@ -14,7 +14,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import pytz
 
-__version__ = "3.2.5"
+__version__ = "3.3.0"
 __prefix__  = ""
 STANDARD = ''
 
@@ -52,8 +52,8 @@ def float_spacing (x, y):
 
 
 # Grid code → resolution in degrees, as defined in the CM SAF naming convention (PDF table, page 8).
-# Lat/lon grids only; projection-based codes (e.g. 05, 10, 25) are intentionally absent
-# because they have no single scalar resolution and are handled as non-regular grids (return None).
+# Lat/lon grids only; projection-based codes are intentionally absent because they have no
+# single scalar resolution and are handled as non-regular grids (return None).
 _GRID_RESOLUTION: dict[str, np.float64] = {
     "17": np.float64("0.03"),
     "23": np.float64("0.05"),
@@ -63,6 +63,16 @@ _GRID_RESOLUTION: dict[str, np.float64] = {
     "22": np.float64("0.625"),
     "20": np.float64("1.0"),
 }
+
+# Known native-projection grid codes (no scalar resolution).
+# Used to suppress spurious warnings for recognised non-regular grids.
+# "05" = native SEVIRI grid.
+_PROJECTION_GRIDS: frozenset[str] = frozenset({"05"})
+
+# Known polar grids.
+# "15" = Lambert azimuthal equal-area projection (15x15 km²).
+# "21" = Lambert azimuthal equal-area projection (25x25 km²).
+_POLAR_GRIDS: frozenset[str] = frozenset({"15", "21"})
 
 
 def cmsaf_decode_grid(filename):
@@ -78,7 +88,7 @@ def cmsaf_decode_grid(filename):
         return None
     code = decode.group(10)
     resolution = _GRID_RESOLUTION.get(code)
-    if resolution is None:
+    if resolution is None and code not in _PROJECTION_GRIDS and code not in _POLAR_GRIDS:
         print(f"{RC_WARN} Unknown grid code '{code}' in filename '{filename}'")
     return resolution
 
@@ -127,18 +137,55 @@ def decode_timeDuration(duration):
     )
 
 
+def _parse_attribute_rule(attr_el) -> dict:
+    """Parse a single <attribute> element into a rule dict.
+
+    Shares the same content/regex sub-element structure as <entry> so the
+    validation logic in _checkVariableAttributes can reuse the same patterns
+    as _checkGlobalAttributes.
+    """
+    return {
+        'id':       normalize_whitespace(attr_el.get('id', '')),
+        'type':     normalize_whitespace(attr_el.get('type', 's')),
+        'required': normalize_whitespace(attr_el.get('required', 'no')),
+        'join':     attr_el.get('join', 'or').strip(),
+        'content':  [
+            {'value': normalize_whitespace(c.text or ''),
+             'type':  c.get('type', 'string').strip()}
+            for c in attr_el.findall('content')
+        ],
+        'regex':    [
+            {'value': (r.text or '').strip(),
+             'warn':  r.get('warn', '').strip(),
+             'type':  r.get('type', 'string').strip()}
+            for r in attr_el.findall('regex')
+        ],
+    }
+
+
 def _parse_standard(filename: str) -> SimpleNamespace:
     """
     Parse a CM SAF metadata standard XML file.
 
     Returns a SimpleNamespace with attributes:
       .dict           — {id: entry_dict} for all <entry> elements
+      .variables      — list of variable rule dicts for all <variable> elements
       .version_number — str
       .last_modified  — str
       .include        — str | None  (name of included base standard, if present)
 
     Each entry_dict has keys: type, required, evaluate, list, join,
     content (list of dicts), regex (list of dicts), keywords (list of str).
+
+    Each variable rule dict has keys:
+      match_by    — 'standard_name' or 'name'
+      match_value — str
+      required    — 'yes' | 'no'
+      scope       — str (comma-separated list: 'all', 'grid', 'swath',
+                    'regular_grid', 'native_grid', 'seviri_grid')
+      coordinate  — bool: if True, only CF coordinate variables are matched
+                    (1-D, name == dimension name per CF Conventions §1.2)
+      attributes  — list of attribute rule dicts (see _parse_attribute_rule)
     """
     tree = ET.parse(filename)
     root = tree.getroot()
@@ -171,11 +218,31 @@ def _parse_standard(filename: str) -> SimpleNamespace:
             ],
         }
 
+    variable_list = []
+    for var_el in root.findall('variable'):
+        if var_el.get('standard_name') is not None:
+            match_by    = 'standard_name'
+            match_value = normalize_whitespace(var_el.get('standard_name'))
+        elif var_el.get('name') is not None:
+            match_by    = 'name'
+            match_value = normalize_whitespace(var_el.get('name'))
+        else:
+            continue  # malformed element — skip silently
+        variable_list.append({
+            'match_by':    match_by,
+            'match_value': match_value,
+            'required':    normalize_whitespace(var_el.get('required',   'no')),
+            'scope':       normalize_whitespace(var_el.get('scope',      'all')),
+            'coordinate':  normalize_whitespace(var_el.get('coordinate', 'no')) == 'yes',
+            'attributes':  [_parse_attribute_rule(a) for a in var_el.findall('attribute')],
+        })
+
     return SimpleNamespace(
         version_number = normalize_whitespace(root.findtext('version_number', '')),
         last_modified  = normalize_whitespace(root.findtext('last_modified',  '')),
         include        = normalize_whitespace(include_el.text) if include_el is not None else None,
         dict           = entry_dict,
+        variables      = variable_list,
     )
 
 
@@ -540,6 +607,9 @@ class CMSAFChecker:
             merged.update(self.std_name_dh.dict)
             self.std_name_dh.dict = merged
 
+            # variable rules: base first, child appends (no replacement)
+            self.std_name_dh.variables = include_.variables + self.std_name_dh.variables
+
 
     def __del__(self):
         if self.refDataset:
@@ -611,6 +681,14 @@ class CMSAFChecker:
                 print(f"\n{'':=^80}\n>>> checking metadata standard\n{'':=^80}")
                 rc = self._checkStandard()
 
+                print(f"\n{'':=^80}\n>>> checking variable attributes\n{'':=^80}")
+                rcVarAttr = self._checkVariableAttributes()
+                if rcVarAttr == 0:
+                    print(f"\n{RC_OK} <<< variable attributes")
+                else:
+                    print(f"\n{RC_FAIL} <<< variable attributes")
+                rc += rcVarAttr
+
             if self.coordinates:
                 print(f"\n{'':=^80}\n>>> Checking coordinates\n{'':=^80}")
                 rcCoord = self._checkCoordinates()
@@ -623,6 +701,139 @@ class CMSAFChecker:
             self.Dataset.close()
 
         return rc+rcCompress+rcVariables
+
+
+    def _matches_scope(self, scope_str: str) -> bool:
+        """Return True if the current file matches any scope token in scope_str.
+
+        Scope tokens (comma-separated):
+          all          — always matches
+          swath        — isSwathData() is True
+          grid         — isSwathData() is False (regular or native projection)
+          regular_grid — grid and grid code in _GRID_RESOLUTION
+          native_grid  — grid and grid code in _PROJECTION_GRIDS
+          polar_grid   — grid and grid code in _POLAR_GRIDS
+          seviri_grid  — grid and grid code == '05'
+        """
+        scopes = [s.strip() for s in scope_str.split(',')]
+        if 'all' in scopes:
+            return True
+        is_swath  = self.Dataset.isSwathData()
+        decode    = re.match(CMSAF_NAMING_STANDARD, self.File)
+        grid_code = decode.group(10) if decode else None
+        for scope in scopes:
+            if scope == 'swath'        and is_swath:                                         return True
+            if scope == 'grid'         and not is_swath:                                     return True
+            if scope == 'regular_grid' and not is_swath and grid_code in _GRID_RESOLUTION:   return True
+            if scope == 'native_grid'  and not is_swath and grid_code in _PROJECTION_GRIDS:  return True
+            if scope == 'polar_grid'   and not is_swath and grid_code in _POLAR_GRIDS:       return True
+            if scope == 'seviri_grid'  and not is_swath and grid_code == '05':               return True
+        return False
+
+
+    def _checkOneVariableAttribute(self, var, vpath: str, rule: dict) -> int:
+        """Check a single attribute rule against a variable.
+
+        Returns 0 (pass) or 1 (fail). Mirrors the content/regex matching logic
+        of _checkGlobalAttributes but without keyword or list support, which are
+        not needed for variable attribute rules.
+        """
+        attr_id  = rule['id']
+        required = rule['required']
+
+        if not hasattr(var, attr_id):
+            if required == 'yes':
+                print(f"    {RC_ERR} missing required attribute '{attr_id}'")
+                self.err += 1
+                self.errAttr.append(f"{vpath}@{attr_id}")
+                return 1
+            return 0
+
+        value = getattr(var, attr_id)
+        print(f"    {attr_id}: {value!r}")
+
+        # content check: any matching entry is a pass (join=or default)
+        if rule['content']:
+            if not any(item['value'] == str(value) for item in rule['content']):
+                print(f"    {RC_ERR} incorrect value for '{attr_id}': '{value}'")
+                if len(rule['content']) == 1:
+                    print(f"    Expecting: '{rule['content'][0]['value']}'")
+                else:
+                    print(f"    Expecting one of: {[i['value'] for i in rule['content']]}")
+                self.err += 1
+                self.errAttr.append(f"{vpath}@{attr_id}")
+                return 1
+
+        # regex check: pass if at least one non-warn pattern matches
+        if rule['regex']:
+            matched = False
+            for item in rule['regex']:
+                if re.search(item['value'], str(value)):
+                    if item['warn']:
+                        print(f"    {RC_WARN} {item['warn']}")
+                        self.warn += 1
+                        self.warnAttr.append(f"{vpath}@{attr_id}")
+                    else:
+                        matched = True
+            all_warn = all(item['warn'] for item in rule['regex'])
+            if not matched and not all_warn:
+                print(f"    {RC_ERR} '{attr_id}' value '{value}' does not match expected pattern")
+                self.err += 1
+                self.errAttr.append(f"{vpath}@{attr_id}")
+                return 1
+
+        return 0
+
+
+    def _checkVariableAttributes(self) -> int:
+        """Check variable attribute rules defined in the XML standard.
+
+        Iterates over std_name_dh.variables, resolves each rule to actual
+        variables in the dataset, and validates their attributes.
+        Returns 0 if all checks pass, 1 otherwise.
+        """
+        rc = 0
+        ds = self.Dataset
+
+        for var_rule in self.std_name_dh.variables:
+            match_by    = var_rule['match_by']
+            match_value = var_rule['match_value']
+            required    = var_rule['required']
+            scope_str   = var_rule['scope']
+            is_coord    = var_rule['coordinate']
+
+            # skip if file type is outside the declared scope
+            if not self._matches_scope(scope_str):
+                continue
+
+            # resolve matching variables from the dataset
+            if match_by == 'standard_name':
+                found_vars = ds.getVariableByStandardName(match_value)
+            else:
+                found_vars = ds.getVariableByName(match_value)
+
+            # when coordinate="yes", restrict to CF coordinate variables only
+            # (1-D, variable name == its sole dimension name, CF Conventions §1.2)
+            if is_coord:
+                found_vars = {k: v for k, v in found_vars.items()
+                              if _is_coordinate_variable(v)}
+
+            if not found_vars:
+                if required == 'yes':
+                    print(f"  {RC_ERR} missing required variable with {match_by}='{match_value}'")
+                    self.err += 1
+                    self.errAttr.append(match_value)
+                    rc = 1
+                continue
+
+            # check attribute rules for each matched variable
+            for vpath, var in found_vars.items():
+                print(f"\n  {vpath} ({match_by}='{match_value}')")
+                for attr_rule in var_rule['attributes']:
+                    if self._checkOneVariableAttribute(var, vpath, attr_rule) != 0:
+                        rc = 1
+
+        return rc
 
 
     def _checkStandard(self):
