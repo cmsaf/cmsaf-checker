@@ -74,6 +74,61 @@ _PROJECTION_GRIDS: frozenset[str] = frozenset({"05"})
 # "21" = Lambert azimuthal equal-area projection (25x25 km²).
 _POLAR_GRIDS: frozenset[str] = frozenset({"15", "21"})
 
+# Mapping from dtype token (used in XML 'dtype' attributes) to the set of numpy
+# scalar types that token accepts.  Type-class shorthands ('int', 'float', 'str')
+# group entire families; specific tokens map to a singleton.
+# Used by _matches_dtype() for both variable-level and attribute-level checks.
+_DTYPE_CLASSES: dict[str, frozenset] = {
+    'int':     frozenset({np.int8,   np.int16,  np.int32,  np.int64,
+                          np.uint8,  np.uint16, np.uint32, np.uint64}),
+    'float':   frozenset({np.float32, np.float64}),
+    'str':     frozenset({str, np.bytes_, np.str_}),
+    'int8':    frozenset({np.int8}),
+    'int16':   frozenset({np.int16}),
+    'int32':   frozenset({np.int32}),
+    'int64':   frozenset({np.int64}),
+    'uint8':   frozenset({np.uint8}),
+    'uint16':  frozenset({np.uint16}),
+    'uint32':  frozenset({np.uint32}),
+    'uint64':  frozenset({np.uint64}),
+    'float32': frozenset({np.float32}),
+    'float64': frozenset({np.float64}),
+}
+
+
+def _matches_dtype(value, dtype_spec: str) -> bool:
+    """Return True if *value* matches any token in the comma-separated *dtype_spec*.
+
+    *value* may be:
+      - np.dtype  — the variable's own .dtype (e.g. np.dtype('int16'))
+      - str       — a plain Python string attribute value
+      - numpy scalar or ndarray — a numeric attribute value
+
+    An empty *dtype_spec* always returns True (no constraint declared).
+    Unknown tokens are tried as literal numpy dtype names; invalid names are
+    silently ignored (no match).
+    """
+    if not dtype_spec:
+        return True
+    if isinstance(value, np.dtype):
+        actual = value.type
+    elif isinstance(value, str):
+        actual = str
+    else:
+        actual = np.asarray(value).dtype.type
+    for token in (t.strip() for t in dtype_spec.split(',')):
+        allowed = _DTYPE_CLASSES.get(token)
+        if allowed is not None:
+            if actual in allowed:
+                return True
+        else:
+            try:
+                if actual == np.dtype(token).type:
+                    return True
+            except TypeError:
+                pass
+    return False
+
 
 def cmsaf_decode_grid(filename):
     """
@@ -143,10 +198,15 @@ def _parse_attribute_rule(attr_el) -> dict:
     Shares the same content/regex sub-element structure as <entry> so the
     validation logic in _checkVariableAttributes can reuse the same patterns
     as _checkGlobalAttributes.
+
+    The optional 'dtype' attribute (comma-separated token list) is validated
+    by _matches_dtype(); it is independent of the existing 'type' attribute
+    which preserves its original s/f32/f64 semantics for global-attribute rules.
     """
     return {
         'id':       normalize_whitespace(attr_el.get('id', '')),
         'type':     normalize_whitespace(attr_el.get('type', 's')),
+        'dtype':    normalize_whitespace(attr_el.get('dtype', '')),
         'required': normalize_whitespace(attr_el.get('required', 'no')),
         'join':     attr_el.get('join', 'or').strip(),
         'content':  [
@@ -234,6 +294,7 @@ def _parse_standard(filename: str) -> SimpleNamespace:
             'required':    normalize_whitespace(var_el.get('required',   'no')),
             'scope':       normalize_whitespace(var_el.get('scope',      'all')),
             'coordinate':  normalize_whitespace(var_el.get('coordinate', 'no')) == 'yes',
+            'dtype':       normalize_whitespace(var_el.get('dtype',      '')),
             'attributes':  [_parse_attribute_rule(a) for a in var_el.findall('attribute')],
         })
 
@@ -752,6 +813,16 @@ class CMSAFChecker:
         value = getattr(var, attr_id)
         print(f"    {attr_id}: {value!r}")
 
+        # dtype check: verify the attribute's data type before content/regex checks
+        if rule['dtype']:
+            if not _matches_dtype(value, rule['dtype']):
+                actual = 'str' if isinstance(value, str) else str(np.asarray(value).dtype)
+                print(f"    {RC_ERR} incorrect data type for attribute '{attr_id}': '{actual}'")
+                print(f"    Expecting dtype: {rule['dtype']}")
+                self.err += 1
+                self.errAttr.append(f"{vpath}@{attr_id}")
+                return 1
+
         # content check: any matching entry is a pass (join=or default)
         if rule['content']:
             if not any(item['value'] == str(value) for item in rule['content']):
@@ -829,6 +900,16 @@ class CMSAFChecker:
             # check attribute rules for each matched variable
             for vpath, var in found_vars.items():
                 print(f"\n  {vpath} ({match_by}='{match_value}')")
+
+                # variable-level dtype check
+                dtype_spec = var_rule['dtype']
+                if dtype_spec and not _matches_dtype(var.dtype, dtype_spec):
+                    print(f"  {RC_ERR} incorrect data type '{var.dtype}' for '{vpath}'")
+                    print(f"  Expecting dtype: {dtype_spec}")
+                    self.err += 1
+                    self.errAttr.append(vpath)
+                    rc = 1
+
                 for attr_rule in var_rule['attributes']:
                     if self._checkOneVariableAttribute(var, vpath, attr_rule) != 0:
                         rc = 1
@@ -2275,23 +2356,6 @@ class CMSAFChecker:
         rc = 0
         ds = self.Dataset
         vList = ds.getVariableList()
-
-        # record_status must be defined
-        recordStatus = ds.getVariableByName("record_status")
-        if len(recordStatus) > 0:
-            for key in recordStatus:
-                item = recordStatus[key]
-                if (not (item.dtype == np.dtype(np.uint8) or
-                         item.dtype == np.dtype(np.int8)  or
-                         item.dtype == np.dtype(np.int16) or
-                         item.dtype == np.dtype(np.int32)    ) ):
-                    rc = 1
-                    print(f"{RC_ERR} incorrect data type of '{key}'\n")
-
-        # no record status for swath data required
-        elif not ds.isSwathData():
-            rc = 1
-            print(f"{RC_ERR} missing mandatory variable 'record_status'\n")
 
         # recommended attributes
         listRec = ['units', 'standard_name', 'grid_mapping']

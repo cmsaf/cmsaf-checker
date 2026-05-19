@@ -304,9 +304,9 @@
      </attribute>
    </variable>
 
-   <variable name="record_status" required="yes" scope="grid">
-     <attribute id="flag_values"   required="yes"/>
-     <attribute id="flag_meanings" required="yes"/>
+   <variable name="record_status" required="yes" scope="grid" dtype="uint8,int8">
+     <attribute id="flag_values"   required="yes" dtype="uint8,int8"/>
+     <attribute id="flag_meanings" required="yes" dtype="str"/>
    </variable>
 
 </cmsaf_metadata_standard>
