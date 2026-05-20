@@ -1,0 +1,154 @@
+<!-- ======================================================================
+     DTD for CM SAF Metadata Standard XML files
+     Covers both base standard files and product-specific child files
+     that use <include> to extend a base standard.
+
+     Usage — reference from an XML file:
+       <!DOCTYPE cmsaf_metadata_standard
+                 SYSTEM "cmsaf_metadata_standard.dtd">
+     ====================================================================== -->
+
+<!-- ======================================================================
+     Root element
+     Children listed in declaration order; all metadata header children
+     are optional to allow minimal child files that only override entries.
+     <include> names the base standard file to merge from (child files only).
+     <entry> and <variable> elements may appear in any number and order.
+     ====================================================================== -->
+<!ELEMENT cmsaf_metadata_standard
+    ( include?,
+      version_number?,
+      last_modified?,
+      institution?,
+      contact?,
+      entry*,
+      variable* )>
+
+<!ATTLIST cmsaf_metadata_standard
+    xmlns:xsi   CDATA   #IMPLIED>
+
+
+<!-- ======================================================================
+     Metadata header elements (plain text content)
+     ====================================================================== -->
+<!ELEMENT include        (#PCDATA)>
+<!ELEMENT version_number (#PCDATA)>
+<!ELEMENT last_modified  (#PCDATA)>
+<!ELEMENT institution    (#PCDATA)>
+<!ELEMENT contact        (#PCDATA)>
+
+
+<!-- ======================================================================
+     Global attribute entry
+     id       — attribute name (unique within the standard)
+     type     — data type: 's' | 'f32' | 'f64'
+     required — 'yes' | 'no' | 'none'
+                  yes  = attribute must be present
+                  no   = attribute is optional
+                  none = attribute must NOT be present
+     list     — delimiter character for multi-value attributes (e.g. ',')
+                empty string means the attribute is a single value
+     join     — validation mode for multi-value attributes:
+                  or  = at least one value must match (default)
+                  and = all required content values must be present
+     evaluate — 'yes' | 'no': expand ${...} placeholders in content values
+     ====================================================================== -->
+<!ELEMENT entry ( content*, regex*, keywords* )>
+
+<!ATTLIST entry
+    id       CDATA                   #REQUIRED
+    type     (s|f32|f64)             "s"
+    required (yes|no|none)           "no"
+    list     CDATA                   ""
+    join     (or|and)                "or"
+    evaluate (yes|no)                "no">
+
+
+<!-- ======================================================================
+     Content value for <entry> or <attribute>
+     #PCDATA — the exact expected value (or keyword path)
+     type    — 'string'  : value must match exactly (default)
+               'keyword' : value is validated against a GCMD keyword vocabulary
+     ====================================================================== -->
+<!ELEMENT content (#PCDATA)>
+
+<!ATTLIST content
+    type     (string|keyword)        "string">
+
+
+<!-- ======================================================================
+     Regular expression rule for <entry> or <attribute>
+     #PCDATA — the regex pattern (Python re syntax)
+     type    — 'string'  : pattern applied to the full value (default)
+               'keyword' : pattern applied to each keyword element
+     warn    — if non-empty, a regex match produces a WARNING rather than
+               confirming the value; used for advisory checks
+     ====================================================================== -->
+<!ELEMENT regex (#PCDATA)>
+
+<!ATTLIST regex
+    type     (string|keyword)        "string"
+    warn     CDATA                   "">
+
+
+<!-- ======================================================================
+     GCMD keyword vocabulary reference for <entry>
+     #PCDATA — filename template, may contain ${...} version placeholders
+               e.g. sciencekeywords_v${keywords_vocabulary_version}.csv
+     ====================================================================== -->
+<!ELEMENT keywords (#PCDATA)>
+
+
+<!-- ======================================================================
+     Variable rule
+     Identifies a variable in the dataset by standard_name OR name
+     (DTD cannot enforce mutual exclusion; supply exactly one).
+
+     standard_name — match variables by CF standard_name attribute
+     name          — match variables by variable name
+     required      — 'yes' | 'no': whether the variable must be present
+     scope         — comma-separated list of data-type contexts in which
+                     this rule applies:
+                       all          always applies (default)
+                       swath        swath data only
+                       grid         non-swath data (regular or native projection)
+                       regular_grid non-swath with a known lat/lon resolution
+                       native_grid  non-swath on a native projection grid
+                       polar_grid   non-swath on a polar/Lambert projection grid
+                       seviri_grid  non-swath on the native SEVIRI grid (code 05)
+     coordinate    — 'yes' | 'no': when 'yes', only CF coordinate variables
+                     are matched (1-D, variable name == dimension name, CF §1.2)
+     dtype         — comma-separated list of dtype tokens accepted for the
+                     variable's own NetCDF data type; omit to skip type check.
+                     Tokens: int, float, str, int8/16/32/64, uint8/16/32/64,
+                     float32, float64.  Multiple tokens mean "any of these".
+     ====================================================================== -->
+<!ELEMENT variable ( attribute* )>
+
+<!ATTLIST variable
+    standard_name  CDATA             #IMPLIED
+    name           CDATA             #IMPLIED
+    required       (yes|no)          "no"
+    scope          CDATA             "all"
+    coordinate     (yes|no)          "no"
+    dtype          CDATA             "">
+
+
+<!-- ======================================================================
+     Attribute rule within a <variable> block
+     id       — attribute name to check on the matched variable
+     type     — data type: 's' | 'f32' | 'f64'
+     required — 'yes' | 'no'
+     join     — 'or' | 'and' (same semantics as for <entry>)
+     dtype    — comma-separated dtype token(s) for the attribute's value;
+                omit to skip type check.  Same token vocabulary as on
+                <variable dtype="...">.
+     ====================================================================== -->
+<!ELEMENT attribute ( content*, regex* )>
+
+<!ATTLIST attribute
+    id       CDATA                   #REQUIRED
+    type     (s|f32|f64)             "s"
+    required (yes|no)                "no"
+    join     (or|and)                "or"
+    dtype    CDATA                   "">
