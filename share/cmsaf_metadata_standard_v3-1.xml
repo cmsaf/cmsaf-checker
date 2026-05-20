@@ -207,13 +207,14 @@
 
 
    <!-- ================================================================ -->
-   <!-- Variable attribute rules                                          -->
+   <!-- Variable attribute rules                                         -->
    <!-- scope values (comma-separated list):                             -->
    <!--   all          — always applies (default)                        -->
    <!--   swath        — swath data only                                 -->
    <!--   grid         — non-swath data (regular or native projection)   -->
    <!--   regular_grid — non-swath with a known lat/lon resolution       -->
    <!--   native_grid  — non-swath on a native projection grid           -->
+   <!--   polar_grid   — non-swath on a polar/Lambert projection grid    -->
    <!--   seviri_grid  — non-swath on the native SEVIRI grid (code 05)   -->
    <!-- ================================================================ -->
 
