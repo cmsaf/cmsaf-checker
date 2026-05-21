@@ -940,6 +940,290 @@ class CMSAFChecker:
         return rc
 
 
+    def _evaluatePlaceholders(self, attr: dict, ds) -> None:
+        """Expand ${references} and ${year} placeholders in attr['content'] values in place.
+
+        Called for every standard entry before any value checks so that the
+        expanded values are visible in both the required-attribute pass and the
+        content-matching pass.  The mutation is intentional and matches the
+        original behaviour.
+        """
+        if attr['evaluate'] != 'yes':
+            return
+        if hasattr(ds, 'references'):
+            ref_val = getattr(ds, 'references')
+            for item in attr['content']:
+                item['value'] = item['value'].replace('${references}', ref_val)
+        now = os.environ.get('CMSAF_RELEASE_YEAR') or datetime.datetime.now().strftime('%Y')
+        for item in attr['content']:
+            item['value'] = item['value'].replace('${year}', now)
+
+    def _resolveKeywordFilename(self, keywordsFn: str, ds) -> str:
+        """Resolve a ${..._version} placeholder in a keyword CSV filename.
+
+        Returns the filename with the version string substituted when the
+        corresponding dataset attribute is present; otherwise returns the
+        original (template) filename unchanged.
+        """
+        if '${' not in keywordsFn:
+            return keywordsFn
+        vocabulary_name = None
+        vocabulary_version = None
+        decode = re.match(r'^.*\$\{([a-z_]*)_version\}.*$', keywordsFn)
+        if decode is not None:
+            vocabulary_name = decode.group(1)
+        if vocabulary_name is not None and hasattr(ds, vocabulary_name):
+            decode = re.match(r'^.*Version +([0-9\.]*)$', getattr(ds, vocabulary_name))
+            if decode is not None:
+                vocabulary_version = decode.group(1)
+        if vocabulary_name is not None and vocabulary_version is not None:
+            keywordsFn = keywordsFn.replace('${' + vocabulary_name + '_version}', vocabulary_version)
+        return keywordsFn
+
+    def _getKeywords(self, raw_filename: str, key: str, kwList: dict):
+        """Load (or retrieve from cache) the Keywords object for *raw_filename*.
+
+        *raw_filename* may contain a ${..._version} placeholder; it is resolved
+        against the current dataset before lookup.  The resolved filename is used
+        as the cache key so the same CSV is never read twice.
+
+        Returns the Keywords object on success, or None on failure (error already
+        printed and self.err already incremented).
+        """
+        resolved = self._resolveKeywordFilename(raw_filename, self.Dataset)
+        if resolved in kwList:
+            return kwList[resolved]
+        kw = Keywords(filename=resolved, search_paths=self.search_paths)
+        if kw.readFile() != 0:
+            print(f"{RC_ERR} Test incomplete")
+            self.err += 1
+            self.errAttr.append(key)
+            return None
+        kwList[resolved] = kw
+        return kw
+
+    def _checkKeywordValue(self, a: str, kw, key: str) -> bool:
+        """Validate a single keyword path *a* against vocabulary *kw*.
+
+        Returns True if the path is unambiguously found (caller should set
+        or_passed).  On failure the appropriate error is printed and self.err
+        is incremented.
+        """
+        entry_list = re.split(r' *> *', a)
+        entry_item = ' > '.join(entry_list)
+
+        kw_item = kw.findKeywordList(entry_list[-1])
+        if not kw_item:
+            print(f"{RC_ERR} '{entry_list[-1]}' not found as a keyword leaf in the vocabulary")
+            self.err += 1
+            if key not in self.errAttr:
+                self.errAttr.append(key)
+            return False
+
+        # Build a match pattern anchored appropriately for the vocabulary type.
+        # Short_Name-structured vocabularies (providers, instruments): a single
+        # term may be the Short_Name at the start of the path, so match any
+        # complete path segment.  Science keyword hierarchies: a single term
+        # must be the leaf (rightmost element), so anchor to the end only.
+        if len(entry_list) == 1:
+            if 'Short_Name' in (kw.groups or []):
+                entry_pattern = '(^| > )' + re.escape(entry_item) + '( > |$)'
+            else:
+                entry_pattern = '(^| > )' + re.escape(entry_item) + '$'
+        else:
+            entry_pattern = '.*' + re.escape(entry_item) + '$'
+
+        matching_paths = [p for p in kw_item if re.search(entry_pattern, p) is not None]
+        n_hits = len(matching_paths)
+
+        if n_hits == 1:
+            print(f"decoded as '{matching_paths[0]}'")
+            return True
+        if n_hits == 0:
+            print(f"{RC_ERR} keyword path '{entry_item}' not found; "
+                  f"valid paths containing '{entry_list[-1]}':")
+            for p in kw_item:
+                print(f"  {p}")
+        else:
+            print(f"{RC_ERR} keyword '{entry_item}' is ambiguous "
+                  f"({n_hits} matches); be more specific, e.g.:")
+            for p in matching_paths:
+                print(f"  {p}")
+        self.err += 1
+        if key not in self.errAttr:
+            self.errAttr.append(key)
+        return False
+
+    def _checkOneGlobalAttribute(self, key: str, attr, std: dict, fn: str, kwList: dict) -> None:
+        """Check a single global attribute value against its standard rule.
+
+        Handles type checking, empty-string reporting, list splitting,
+        per-element content/regex/keyword validation, and the final
+        join=or / join=and evaluation.  Updates self.err/warn/info counters
+        and their Attr lists directly; does not return a value.
+        """
+        ds = self.Dataset
+
+        # --- type check ---
+        attr_type = type(attr)
+        if attr_type == type(np.array([])):
+            if attr.size == 1 and type(attr[0]) == type(np.float32(1.0)):
+                attr_type = 'f32'
+            elif attr.size == 1 and type(attr[0]) == type(np.float64(1.0)):
+                attr_type = 'f64'
+        else:
+            if attr_type == type(np.float64(1.0)):
+                attr_type = 'f64'
+            elif attr_type == type(np.float32(1.0)):
+                attr_type = 'f32'
+            elif attr_type == type(str('s')):
+                attr_type = 's'
+
+        if str.find(attr_type, std['type']) == -1:
+            print(f"{RC_ERR} Incorrect attribute data type")
+            print(f"Expecting: {std['type']}, found: {attr_type}")
+            self.err += 1
+            self.errAttr.append(key)
+
+        # --- empty-string guard (string attributes only) ---
+        if attr_type == 's':
+            if len(attr) == 0:
+                if std['required'] == 'yes':
+                    if key in self.gIgnoreAtt:
+                        print(f"{RC_INFO} Ignoring empty required attribute")
+                        self.info += 1
+                        if key not in self.infoAttr:
+                            self.infoAttr.append(key)
+                    else:
+                        print(f"{RC_ERR} empty required attribute")
+                        self.err += 1
+                        if key not in self.errAttr:
+                            self.errAttr.append(key)
+                else:
+                    print(f"{RC_INFO} empty attribute")
+                    self.info += 1
+                    if key not in self.infoAttr:
+                        self.infoAttr.append(key)
+                return
+
+        # non-string attributes: print value and skip content/regex/keyword checks
+        if attr_type != 's':
+            print(attr)
+            return
+
+        # --- split attribute into a list if a delimiter is defined ---
+        attr_list = []
+        try:
+            if std['list']:
+                for row in csv.reader([attr], delimiter=std['list']):
+                    attr_list = row
+            else:
+                attr_list = [attr]
+        except UnicodeEncodeError as detail:
+            print(f"{RC_ERR} {detail}")
+            self.err += 1
+            self.errAttr.append(key)
+
+        # join=or:  did any validator pass for any list element?
+        or_passed = False
+        # join=and: which required content values have been seen?
+        and_seen     = set()
+        and_required = {item['value'] for item in std['content']}
+        # tracks whether a content/regex check already reported an error
+        # (used to suppress the redundant "missing a correct value" or message)
+        key_rc = 0
+
+        for a in attr_list:
+            attr_match = []
+
+            # strip surrounding whitespace and quotes
+            a_stripped = a.strip().strip('"')
+            if a != a_stripped:
+                print(f"{RC_WARN} white spaces or quotes detected")
+                self.warn += 1
+                if key not in self.warnAttr:
+                    self.warnAttr.append(key)
+            a = a_stripped
+            print(a)
+
+            # --- content check ---
+            if std['content']:
+                matched_item = next(
+                    (item for item in std['content'] if item['value'] == a),
+                    None,
+                )
+                if matched_item is not None:
+                    or_passed = True
+                    and_seen.add(matched_item['value'])
+                    attr_match.append(matched_item)
+                else:
+                    if key in self.gIgnoreAtt:
+                        print(f"{RC_INFO} Ignoring incorrect attribute content '{key}'")
+                        self.info += 1
+                        if key not in self.infoAttr:
+                            self.infoAttr.append(key)
+                    else:
+                        print(f"{RC_ERR} incorrect attribute content :: '{a}'")
+                        if len(std['content']) == 1:
+                            print(f"Expecting: '{std['content'][0]['value']}'")
+                        key_rc = 1
+                        self.err += 1
+                        if key not in self.errAttr:
+                            self.errAttr.append(key)
+
+            # --- regex check ---
+            if std['regex']:
+                regex_matched = False
+                for item in std['regex']:
+                    if re.search(item['value'], a):
+                        if item['warn']:
+                            print(f"{RC_WARN} {item['warn']}")
+                            self.warn += 1
+                            if key not in self.warnAttr:
+                                self.warnAttr.append(key)
+                        else:
+                            regex_matched = True
+                            attr_match.append(item)
+                if regex_matched:
+                    or_passed = True
+                else:
+                    if key in self.gIgnoreAtt:
+                        print(f"{RC_INFO} Ignoring incorrect attribute content '{key}'")
+                        self.info += 1
+                        if key not in self.infoAttr:
+                            self.infoAttr.append(key)
+                    else:
+                        print(f"{RC_ERR} incorrect attribute content :: '{a}'")
+                        key_rc = 1
+                        self.err += 1
+                        if key not in self.errAttr:
+                            self.errAttr.append(key)
+
+            # --- keyword check ---
+            if std['keywords']:
+                kw = self._getKeywords(std['keywords'][0], key, kwList)
+                if kw is None:
+                    continue
+                for m_item in attr_match:
+                    if m_item['type'] == 'keyword':
+                        if self._checkKeywordValue(a, kw, key):
+                            or_passed = True
+
+        # --- evaluate hits ---
+        if attr_list:
+            if std['join'].lower() == 'or':
+                if not or_passed and key_rc == 0:
+                    print(f"{RC_ERR} missing a correct value for attribute '{key}'")
+                    self.err += 1
+                    if key not in self.errAttr:
+                        self.errAttr.append(key)
+            elif std['join'].lower() == 'and':
+                for value in sorted(and_required - and_seen):
+                    print(f"{RC_ERR} missing required specific attribute content :: '{value}'")
+                    self.err += 1
+                    if key not in self.errAttr:
+                        self.errAttr.append(key)
+
     def _checkGlobalAttributes(self):
         """
         Check global attributes
@@ -949,58 +1233,30 @@ class CMSAFChecker:
         ds = self.Dataset
         rc = 0
 
-        # get file name
-        fn = os.path.realpath(ds.filepath())
-        fn = os.path.basename (fn)
-
+        fn = os.path.basename(os.path.realpath(ds.filepath()))
         kwList = {}
 
-        # loop and find required attributes
-        for key in self.std_name_dh.dict:
-            attr = self.std_name_dh.dict[key]
-
-            # evaluate placeholders
-            if attr['evaluate'] == "yes":
-
-                # reference attribute
-                if hasattr(ds, 'references'):
-                    tmp = getattr(ds,'references')
-                    for index, item in enumerate(attr['content']):
-                        item['value'] = item['value'].replace("${references}", tmp)
-
-                # year
-                now = os.environ.get('CMSAF_RELEASE_YEAR')
-                if now is None:
-                    now = datetime.datetime.now().strftime("%Y")
-                for index, item in enumerate(attr['content']):
-                    item['value'] = item['value'].replace("${year}", now)
-
-            # test if required is defined
-            if attr['required'] == "yes":
-                if not hasattr(ds, key):
-                    if key in self.gIgnoreAtt:
-                        print(f"{RC_INFO} Ignoring missing required attribute '{key}'")
-                        self.info += 1
-                        self.infoAttr.append(key)
-                    else:
-                        print(f"{RC_ERR} Missing required attribute '{key}'")
-                        self.err += 1
-                        self.errAttr.append(key)
-
-            # test improper attributes
-            if attr['required'] == "none":
-                if hasattr(ds,key):
-                    print(f"{RC_ERR} Found improper attribute '{key}'")
+        # pass 1: expand placeholders and check required/none presence
+        for key, attr in self.std_name_dh.dict.items():
+            self._evaluatePlaceholders(attr, ds)
+            if attr['required'] == 'yes' and not hasattr(ds, key):
+                if key in self.gIgnoreAtt:
+                    print(f"{RC_INFO} Ignoring missing required attribute '{key}'")
+                    self.info += 1
+                    self.infoAttr.append(key)
+                else:
+                    print(f"{RC_ERR} Missing required attribute '{key}'")
                     self.err += 1
                     self.errAttr.append(key)
+            elif attr['required'] == 'none' and hasattr(ds, key):
+                print(f"{RC_ERR} Found improper attribute '{key}'")
+                self.err += 1
+                self.errAttr.append(key)
 
-        # loop global attributes and check
+        # pass 2: check values of attributes that are present
         for key in ds.ncattrs():
+            attr = getattr(ds, key)
 
-            attr  = getattr(ds,key)
-            keyRc = 0
-
-            # file name
             if key == 'filename':
                 print(f"\n{key}:\n{attr}")
                 if fn != ds.filename:
@@ -1010,252 +1266,7 @@ class CMSAFChecker:
 
             if key in self.std_name_dh.dict:
                 print(f"\n{key}:")
-                std = self.std_name_dh.dict[key]
-
-                # check attributes type
-                attrType = type(attr)
-                if attrType == type(np.array([])):
-                    if (attr.size == 1) and (type(attr[0]) == type(np.float32(1.0))):
-                        attrType = "f32"
-                    elif (attr.size == 1) and (type(attr[0]) == type(np.float64(1.0))):
-                        attrType = "f64"
-                else:
-                    if attrType == type(np.float64(1.0)):
-                        attrType = "f64"
-                    elif attrType == type(np.float32(1.0)):
-                        attrType = "f32"
-                    elif attrType == type(str('s')):
-                        attrType = 's'
-
-                if str.find(attrType, std['type']) == -1:
-                    print(f"{RC_ERR} Incorrect attribute data type")
-                    print(f"Expecting: {std['type']}, found: {attrType}")
-                    keyRc = 1
-                    self.err += 1
-                    self.errAttr.append(key)
-
-                # report empty string attributes
-                if attrType == 's':
-                    if len(attr) == 0:
-                        if std['required'] == "yes":
-                            if key in self.gIgnoreAtt:
-                                print(f"{RC_INFO} Ignoring empty required attribute")
-                                self.info += 1
-                                if key not in self.infoAttr:
-                                    self.infoAttr.append(key)
-                            else:
-                                print(f"{RC_ERR} empty required attribute")
-                                self.err += 1
-                                if key not in self.errAttr:
-                                    self.errAttr.append(key)
-                        else:
-                            print(f"{RC_INFO} empty attribute")
-                            self.info += 1
-                            if key not in self.infoAttr:
-                                self.infoAttr.append(key)
-                        continue
-
-                # skip non string from further checks
-                if attrType != 's':
-                    print(attr)
-                    continue
-
-                # start with empty list
-                attrList = []
-
-                # join=or:  did any validator fire for any list element?
-                or_passed = False
-
-                # join=and: which required content values have been seen?
-                and_seen     = set()
-
-                # and_required covers <content> values only — <regex> elements act as format
-                # guards on whatever value is present, not as independently required entries.
-                # If join=and with <regex> is ever needed, revisit this assumption.
-                and_required = {item['value'] for item in std['content']}
-
-                # make a list if attribute is defined as a list of values
-                try:
-                    if len(std['list']) > 0:
-                        for row in csv.reader([attr], delimiter=std['list']):
-                            attrList = row
-                    else:
-                        attrList = [attr]
-                except UnicodeEncodeError as detail:
-                    print(f"{RC_ERR} {detail}")
-                    self.err += 1
-                    self.errAttr.append(key)
-
-                # loop content list
-                for a in attrList:
-                    attrMatch = []
-
-                    # remove white spaces, and quotes
-                    a_ = a.strip()
-                    a_ = a_.strip('"')
-                    if a != a_:
-                        print(f"{RC_WARN} white spaces or quotes detected")
-                        self.warn += 1
-                        if key not in self.warnAttr:
-                            self.warnAttr.append(key)
-                    a = a_
-                    print(a)
-
-                    # check attribute content
-                    if len(std['content']) > 0:
-
-                        # find the first matching content entry
-                        matched_item = next(
-                            (item for item in std['content'] if item['value'] == a),
-                            None,
-                        )
-
-                        if matched_item is not None:
-                            or_passed = True
-                            and_seen.add(matched_item['value'])
-                            attrMatch.append(matched_item)
-                        else:
-                            if key in self.gIgnoreAtt:
-                                print(f"{RC_INFO} Ignoring incorrect attribute content '{key}'")
-                                self.info += 1
-                                if key not in self.infoAttr:
-                                    self.infoAttr.append(key)
-                            else:
-                                print(f"{RC_ERR} incorrect attribute content :: '{a}'")
-                                if len(std['content']) == 1:
-                                    print(f"Expecting: '{std['content'][0]['value']}'")
-                                keyRc = 1
-                                self.err += 1
-                                if key not in self.errAttr:
-                                    self.errAttr.append(key)
-
-                    # check attribute content with regular expression
-                    if len(std['regex']) > 0:
-                        regex_matched = False
-                        for item in std['regex']:
-                            if re.search(item['value'], a):
-                                if item['warn'] != "":
-                                    print(f"{RC_WARN} {item['warn']}")
-                                    self.warn += 1
-                                    if key not in self.warnAttr:
-                                        self.warnAttr.append(key)
-                                else:
-                                    regex_matched = True
-                                    attrMatch.append(item)
-
-                        if regex_matched:
-                            or_passed = True
-                        else:
-                            if key in self.gIgnoreAtt:
-                                print(f"{RC_INFO} Ignoring incorrect attribute content '{key}'")
-                                self.info += 1
-                                if key not in self.infoAttr:
-                                    self.infoAttr.append(key)
-                            else:
-                                print(f"{RC_ERR} incorrect attribute content :: '{a}'")
-                                keyRc = 1
-                                self.err += 1
-                                if key not in self.errAttr:
-                                    self.errAttr.append(key)
-
-                    # check keyword list
-                    if len(std['keywords']) > 0:
-                        # read new keyword list from file
-                        keywordsFn = std['keywords'][0]
-                        if not keywordsFn in kwList:
-                            # evaluate keyword version number
-                            if keywordsFn.find('${') >= 0:
-                                vocabulary_version = None
-                                vocabulary_name    = None
-                                decode = re.match(r'^.*\$\{([a-z_]*)_version\}.*$', keywordsFn)
-                                if decode is not None:
-                                    vocabulary_name = decode.group(1)
-                                if vocabulary_name is not None and hasattr(ds,vocabulary_name):
-                                    decode = re.match(r'^.*Version +([0-9\.]*)$', getattr(ds,vocabulary_name))
-                                    if decode is not None:
-                                        vocabulary_version = decode.group(1)
-                                if vocabulary_version is not None and vocabulary_name is not None:
-                                    keywordsFn = keywordsFn.replace('${'+vocabulary_name+'_version}',vocabulary_version)
-                            kw = Keywords(filename=keywordsFn, search_paths=self.search_paths)
-                            keyRc = kw.readFile()
-                            if keyRc != 0:
-                                print(f"{RC_ERR} Test incomplete")
-                                self.err += 1
-                                self.errAttr.append(key)
-                                continue
-                            kwList[keywordsFn] = kw;
-                        else:
-                            kw = kwList[keywordsFn]
-
-                        # loop matches
-                        for mIndex, mItem in enumerate(attrMatch):
-                            if mItem['type'] == "keyword":
-                                # split keyword path on ' > ' separator
-                                entryList = re.split(" *> *", a)
-                                entryItem = " > ".join(entryList)
-
-                                # find all vocabulary paths whose leaf matches the last element
-                                kwItem = kw.findKeywordList(entryList[-1])
-                                if not kwItem:
-                                    print(f"{RC_ERR} '{entryList[-1]}' not found as a keyword leaf in the vocabulary")
-                                    self.err += 1
-                                    if key not in self.errAttr:
-                                        self.errAttr.append(key)
-                                else:
-                                    # Build a pattern that matches the supplied path at the right end.
-                                    # For Short_Name-structured vocabularies (providers, instruments),
-                                    # a single term may be the Short_Name at the start of the path,
-                                    # so match it as any complete path segment.
-                                    # For science keyword hierarchies, a single term must be the
-                                    # leaf (rightmost element), so anchor to the end only.
-                                    if len(entryList) == 1:
-                                        if 'Short_Name' in (kw.groups or []):
-                                            entryP = "(^| > )" + re.escape(entryItem) + "( > |$)"
-                                        else:
-                                            entryP = "(^| > )" + re.escape(entryItem) + "$"
-                                    else:
-                                        entryP = ".*" + re.escape(entryItem) + "$"
-
-                                    matchingPaths = [item for item in kwItem
-                                                     if re.search(entryP, item) is not None]
-                                    entryHits = len(matchingPaths)
-
-                                    if entryHits == 1:
-                                        print(f"decoded as '{matchingPaths[0]}'")
-                                        or_passed = True
-                                    elif entryHits == 0:
-                                        print(f"{RC_ERR} keyword path '{entryItem}' not found; "
-                                              f"valid paths containing '{entryList[-1]}':")
-                                        for item in kwItem:
-                                            print(f"  {item}")
-                                        self.err += 1
-                                        if key not in self.errAttr:
-                                            self.errAttr.append(key)
-                                    else:
-                                        print(f"{RC_ERR} keyword '{entryItem}' is ambiguous "
-                                              f"({entryHits} matches); be more specific, e.g.:")
-                                        for item in matchingPaths:
-                                            print(f"  {item}")
-                                        self.err += 1
-                                        if key not in self.errAttr:
-                                            self.errAttr.append(key)
-
-                # evaluate hits
-                if len(attrList) >= 1:
-                    if std['join'].lower() == "or":
-                        if not or_passed and keyRc == 0:
-                            print(f"{RC_ERR} missing a correct value for attribute '{key}'")
-                            keyRc = 1
-                            self.err += 1
-                            if key not in self.errAttr:
-                                self.errAttr.append(key)
-                    elif std['join'].lower() == "and":
-                        for value in sorted(and_required - and_seen):
-                            print(f"{RC_ERR} missing required specific attribute content :: '{value}'")
-                            keyRc = 1
-                            self.err += 1
-                            if key not in self.errAttr:
-                                self.errAttr.append(key)
+                self._checkOneGlobalAttribute(key, attr, self.std_name_dh.dict[key], fn, kwList)
 
         if self.err > 0:
             rc = 1
