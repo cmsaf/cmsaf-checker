@@ -1715,163 +1715,154 @@ class CMSAFChecker:
         return rc
 
 
-    def _checkCoordinatesTime(self, timeC, expClimate=False, expRecords=None, expResolution=None, recordStatus=None):
-        """
-        Check time coordinates of a netcdf file.
-        """
+    def _checkTimeAxis(self, timeC, expClimate: bool) -> tuple:
+        """Validate the axis, climatology, and units attributes on a time coordinate variable.
 
+        Returns (rc, tUnits, sinceYr, calendar):
+          rc       — 0 OK, -1 axis/range error (time steps may still be decoded),
+                     1 units missing or unparseable (skip time step decoding)
+          tUnits   — str value of the 'units' attribute, or None if absent/invalid
+          sinceYr  — int year extracted from units, or None if units invalid
+          calendar — str calendar name (default 'standard'); only set when rc <= 0
+        """
         rc = 0
-        ds = self.Dataset
-        tUnits = None
-        tSteps = None
-        timeCoverStart = None
-        timeCoverEnd = None
+        tUnits   = None
+        sinceYr  = None
         calendar = "standard"
 
-        if recordStatus is None:
-            recordStatus = {}
-
-        if hasattr(ds,"time_coverage_duration"):
-            timeDuration = decode_timeDuration(ds.time_coverage_duration)
-        else:
-            timeDuration = None
-        if hasattr(ds, "time_coverage_resolution"):
-            timeResolution = decode_timeDuration(ds.time_coverage_resolution)
-        else:
-            timeResolution = None
-
         # test axis attribute
-        if not hasattr(timeC,"axis"):
+        if not hasattr(timeC, "axis"):
             print(f"{'':<8}{RC_ERR} missing mandatory attribute 'axis'")
             rc = -1
         elif timeC.axis != "T":
             print(f"{'':<8}{RC_ERR} invalid value attribute 'axis={timeC.axis}'")
             rc = -1
 
-        # test for climate bounds
+        # test for climate bounds attribute
         if expClimate:
-            if not hasattr(timeC,'climatology'):
+            if not hasattr(timeC, 'climatology'):
                 print(f"{'':<8}{RC_WARN} Expecting attribute 'climatology' as attribute for time bounds time")
         else:
-            if hasattr(timeC,'climatology'):
+            if hasattr(timeC, 'climatology'):
                 print(f"{'':<8}{RC_WARN} Found unexpected attribute 'climatology' as attribute for time bounds time")
 
-        # decode time record in file
-        if not hasattr(timeC,'units'):
+        # decode time units
+        if not hasattr(timeC, 'units'):
             print(f"{'':<8}{RC_ERR} missing mandatory attribute 'units' for time axis")
             rc = 1
         else:
             tUnits = timeC.units
-            sinceYr = re.match('(.*since )((-)?[-0-9]{4})(.*)', tUnits)
-            if sinceYr == None:
+            m = re.match('(.*since )((-)?[-0-9]{4})(.*)', tUnits)
+            if m is None:
                 print(f"{'':<8}{RC_ERR} invalid time axis: '{tUnits}'")
                 rc = 1
             else:
-                sinceYr = int(sinceYr.group(2))
+                sinceYr = int(m.group(2))
                 if sinceYr < 1958:
                     print(f"{'':<8}{RC_ERR} invalid time axis: '{tUnits}'")
                     rc = -1
 
-        # found valid time unit
-        if rc <= 0:
-            if hasattr(timeC,'calendar'):
-                calendar = timeC.calendar
+        # calendar is only extracted when units are valid
+        if rc <= 0 and hasattr(timeC, 'calendar'):
+            calendar = timeC.calendar
 
-            # decode all time steps if not swath files, otherwise just first and last step
-            axisTmp = timeC
-            if ds.isSwathData():
-                axisTmp = np.empty(2, dtype=timeC.dtype)
-                axisTmp[0] = timeC[0]
-                axisTmp[1] = timeC[-1]
-                print(f"{'':<8}{RC_INFO} checking only first an last record for swath data.")
+        return rc, tUnits, sinceYr, calendar
 
-            try:
-                tSteps = np.empty(axisTmp.shape, dtype=datetime.datetime)
-                it = np.nditer(axisTmp, flags=['c_index'])
-                while not it.finished:
-                    if sinceYr < 1:
-                        t = Time(axisTmp[it.index], format='jd', scale='utc', precision=4)
-                        t = datetime.datetime.strptime(t.isot, "%Y-%m-%dT%H:%M:%S.%f")
-                        if t is not None:
-                            tSteps[it.index] = t.replace(tzinfo=pytz.utc);
-                    else:
-                        try:
-                            t = num2date (axisTmp[it.index], timeC.units, calendar=calendar)
-                            if isinstance(t, datetime.datetime):
-                                t = t.replace(tzinfo=pytz.utc)
-                            tmp = np.around(t.microsecond * np.float64(0.01)).astype(np.int64)*100
-                            if t.microsecond > 0:
-                                print(f"{'':<8}{RC_WARN} time record not exact (mus={t.microsecond})")
-                            t  = t + datetime.timedelta(microseconds=int(tmp-t.microsecond))
-                        except ValueError:
-                            print(f"{'':<8}{RC_ERR} invalid time record")
-                            rc = 1
-                            t = None
 
-                        if t is not None:
-                            tSteps[it.index] = t
-                    it.iternext()
-            except Exception:
-                rc = 1
-                print(f"{'':<8}{RC_ERR} invalid time axis.")
+    def _decodeTimeSteps(self, timeC, sinceYr: int, calendar: str) -> tuple:
+        """Decode the numeric time axis values to a numpy array of datetime objects.
 
-        # decode time record in file name
-        decode = re.match(CMSAF_NAMING_STANDARD, self.File)
+        For swath data only the first and last record are decoded.
+        Returns (tSteps, rc): tSteps is None on unrecoverable error.
+        """
+        rc = 0
+        ds = self.Dataset
+
+        axisTmp = timeC
+        if ds.isSwathData():
+            axisTmp = np.empty(2, dtype=timeC.dtype)
+            axisTmp[0] = timeC[0]
+            axisTmp[1] = timeC[-1]
+            print(f"{'':<8}{RC_INFO} checking only first an last record for swath data.")
+
+        tSteps = None
         try:
-            timeStepFn = datetime.datetime.strptime(self.File[5:17], "%Y%m%d%H%M")
-            timeStepFn = timeStepFn.replace(tzinfo=pytz.utc);
-        except ValueError:
-            timeStepFn = None
+            tSteps = np.empty(axisTmp.shape, dtype=datetime.datetime)
+            it = np.nditer(axisTmp, flags=['c_index'])
+            while not it.finished:
+                if sinceYr < 1:
+                    t = Time(axisTmp[it.index], format='jd', scale='utc', precision=4)
+                    t = datetime.datetime.strptime(t.isot, "%Y-%m-%dT%H:%M:%S.%f")
+                    if t is not None:
+                        tSteps[it.index] = t.replace(tzinfo=pytz.utc)
+                else:
+                    try:
+                        t = num2date(axisTmp[it.index], timeC.units, calendar=calendar)
+                        if isinstance(t, datetime.datetime):
+                            t = t.replace(tzinfo=pytz.utc)
+                        tmp = np.around(t.microsecond * np.float64(0.01)).astype(np.int64) * 100
+                        if t.microsecond > 0:
+                            print(f"{'':<8}{RC_WARN} time record not exact (mus={t.microsecond})")
+                        t = t + datetime.timedelta(microseconds=int(tmp - t.microsecond))
+                    except ValueError:
+                        print(f"{'':<8}{RC_ERR} invalid time record")
+                        rc = 1
+                        t = None
 
-        # checks on time steps
-        if tSteps is not None:
-            # compare dates
-            if decode is not None and ds.isSwathData() == False:
-                if timeStepFn is not None and decode.group(9) == "002" and decode.group(1) == "UTH":
-                    timeStepFn = timeStepFn - datetime.timedelta(days=0, hours=0, minutes=30, seconds=0)
-                if (timeStepFn is not None) and (timeStepFn != tSteps[0]):
-                    print(f"{'':<8}{RC_ERR} time record mismatch, expecting {timeStepFn.isoformat()} as first record")
-                    rc = 1
-            else:
-                if (timeStepFn is not None) and (tSteps[0] is not None) and (timeStepFn > tSteps[0]):
-                    print(f"{'':<8}{RC_ERR} time record mismatch, expecting {timeStepFn.isoformat()} before first record")
-                    rc = 1
+                    if t is not None:
+                        tSteps[it.index] = t
+                it.iternext()
+        except Exception:
+            rc = 1
+            tSteps = None
+            print(f"{'':<8}{RC_ERR} invalid time axis.")
 
-            # test records
-            if expRecords is not None:
-                if expRecords != tSteps.size:
-                    print(f"{'':<8}{RC_ERR} Expecting {expRecords} records but found {tSteps.size}.")
-                    rc = 1
+        return tSteps, rc
 
-        # test time bounds
+
+    def _decodeTimeBounds(self, timeC, tUnits, sinceYr, calendar: str) -> tuple:
+        """Locate, validate, and decode the bounds or climatology variable for a time axis.
+
+        Also determines whether missing bounds (due to a shape error) constitute
+        an error, since that decision is tightly coupled to the variable lookup.
+
+        Returns (timeBoundsKey, timeBounds, rc):
+          timeBoundsKey — 'bounds' or 'climatology'
+          timeBounds    — decoded datetime array, or None
+          rc            — 0 OK, 1 on any error
+        """
+        rc = 0
+        ds = self.Dataset
+
         timeBoundsKey = "bounds"
         timeBoundsVar = None
         timeBounds    = None
-        if hasattr(timeC,"climatology"):
-            timeBoundsKey  = 'climatology'
-        if hasattr(timeC,timeBoundsKey):
-            tmp = getattr(timeC,timeBoundsKey)
+
+        if hasattr(timeC, "climatology"):
+            timeBoundsKey = 'climatology'
+
+        if hasattr(timeC, timeBoundsKey):
+            tmp = getattr(timeC, timeBoundsKey)
             if timeC.group().name == "/":
                 if tmp in ds.variables:
                     timeBoundsVar = ds.getvar(tmp)
             else:
                 if tmp in ds.getgrp(timeC.group().path).variables:
-                    timeBoundsVar = ds.getvar(os.path.join(timeC.group().path,tmp))
+                    timeBoundsVar = ds.getvar(os.path.join(timeC.group().path, tmp))
             if timeBoundsVar is None:
                 print(f"{'':<8}{RC_ERR} Missing configured bounds variable '{tmp}'.")
                 rc = 1
 
-        # check bound units
         if timeBoundsVar is not None:
-            if hasattr(timeBoundsVar,'units'):
+            if hasattr(timeBoundsVar, 'units'):
                 if timeBoundsVar.units != tUnits:
                     print(f"{'':<8}{RC_ERR} time bounds must have same axis as time, but found: {timeBoundsVar.units}")
                     rc = 1
-            if timeBoundsVar.shape != (timeC[:].size,2):
+            if timeBoundsVar.shape != (timeC[:].size, 2):
                 print(f"{'':<8}{RC_ERR} time bounds must have shape (size_of_time,2), but found: {timeBoundsVar.shape}")
                 rc = 1
             else:
-                timeBounds = np.empty(timeBoundsVar.shape, dtype=type(tSteps))
+                timeBounds = np.empty(timeBoundsVar.shape, dtype=datetime.datetime)
                 it = np.nditer(timeBoundsVar, flags=['multi_index'])
                 while not it.finished:
                     if sinceYr < 1:
@@ -1885,24 +1876,22 @@ class CMSAFChecker:
                         timeBounds[it.multi_index] = t
                     it.iternext()
 
-            # check if time bounds are required
+            # determine whether missing bounds (shape error) constitute an error
             if timeBounds is None:
                 expTimeBounds = True
 
-                # no bounds for swath data
+                # no bounds required for swath data
                 if ds.isSwathData():
                     expTimeBounds = False
 
-                # test for cell_methods in main variables
-                elif hasattr(ds,"variable_id"):
+                # no bounds required if all variable_id variables use cell_methods: point
+                elif hasattr(ds, "variable_id"):
                     haveCellMethodsPoint = True
                     for item in ds.variable_id.split(","):
                         hasCellMethodsPoint = False
                         if item in ds.variables:
-                            if hasattr(ds.variables[item],"cell_methods"):
-                                cellMethods = ds.variables[item].cell_methods
-                                cellMethods = re.match('^.*time: *point.*$', cellMethods)
-                                if cellMethods is not None:
+                            if hasattr(ds.variables[item], "cell_methods"):
+                                if re.match('^.*time: *point.*$', ds.variables[item].cell_methods):
                                     hasCellMethodsPoint = True
                         if not hasCellMethodsPoint:
                             haveCellMethodsPoint = False
@@ -1919,186 +1908,289 @@ class CMSAFChecker:
                 else:
                     print(f"{'':<8}{RC_INFO} No time bounds required ")
 
-        # loop records
+        return timeBoundsKey, timeBounds, rc
+
+    def _checkTimeRecords(self, tSteps, timeBounds, timeBoundsKey, timeDuration,
+                          expResolution, recordStatus, timeC) -> int:
+        """Validate each time record against bounds, expected resolution, and record_status.
+
+        Checks per record:
+          - expected record position (from expResolution arithmetic, including leap-year pentad)
+          - record_status flag value
+          - time bounds containment, gap, and overlap (when timeBounds is available)
+          - coverage continuity between successive records
+
+        Returns rc: 0 OK, 1 on any failure.
+        """
+        rc = 0
+        prevTimeEnd    = None
+        timeBoundRight = None
+        itRecord       = tSteps[0]
+        nRecord        = None
+
+        it = np.nditer(tSteps, flags=['c_index', 'refs_ok'])
+        while not it.finished:
+            itRc = 'OK'
+            itRecStatus = None
+
+            # update current expected record
+            if nRecord is not None:
+                itRecord = nRecord
+
+            # compute next expected record from resolution
+            if expResolution is not None:
+                nRecord = itRecord
+                if expResolution.year > 0:
+                    nRecord = nRecord.replace(year=nRecord.year + expResolution.year)
+                if expResolution.month > 0:
+                    nm = nRecord.month + expResolution.month
+                    ny = nRecord.year
+                    if nm > 12:
+                        ny += 1
+                        nm -= 12
+                    nRecord = nRecord.replace(year=ny, month=nm)
+                tr = datetime.timedelta(days=expResolution.day, hours=expResolution.hour,
+                                        minutes=expResolution.minute, seconds=expResolution.second)
+                nRecord += tr
+
+                # add one day during a leap year for the last February pentad period
+                if expResolution.day == 5:
+                    if nRecord.timetuple().tm_yday == 61 and cal.isleap(nRecord.year):
+                        nRecord += datetime.timedelta(days=1)
+
+            # decode matching record_status flag
+            rsKey = os.path.join(timeC.group().path, 'record_status')
+            if rsKey in recordStatus:
+                rsItem = recordStatus[rsKey]
+                if len(rsItem["var"].shape) == 0:
+                    recordStatusValC  = rsItem["val"][0]
+                    recordStatusMaskC = rsItem["mask"][0]
+                else:
+                    recordStatusValC  = rsItem["val"][it.index]
+                    recordStatusMaskC = rsItem["mask"][it.index]
+
+                if not recordStatusMaskC and recordStatusValC in rsItem["dict"]:
+                    itRecStatus = rsItem["dict"][recordStatusValC]
+                else:
+                    rc = 1
+                    print(f"{'':<8}{RC_ERR} invalid record_status value [{recordStatusValC}]")
+                    itRecStatus = None
+
+            # compute effective right bound, adjusting for climatology duration
+            if timeBounds is not None:
+                timeBoundRight = timeBounds[it.index, 1]
+                if timeBoundsKey == 'climatology' and timeDuration is not None:
+                    lb = timeBounds[it.index, 0]
+                    lb = datetime.datetime(year=lb.year, month=lb.month, day=lb.day,
+                                           hour=lb.hour, minute=lb.minute, second=lb.second)
+                    rb = timeBounds[it.index, 1]
+                    rb = datetime.datetime(year=rb.year, month=rb.month, day=rb.day,
+                                           hour=rb.hour, minute=rb.minute, second=rb.second)
+                    num_days = 0
+
+                    # years
+                    if timeDuration.year > 1:
+                        et = lb + relativedelta(years=timeDuration.year - 1)
+                        num_days = (et - lb).days
+                        if cal.isleap(et.year) and (rb - et).days == 29:
+                            num_days += 1
+
+                    # months
+                    if timeDuration.month > 0:
+                        et = lb + relativedelta(months=timeDuration.month - 1)
+                        num_days = (et - lb).days + cal.monthrange(et.year, et.month)[1] - 1
+
+                    # days
+                    num_days += max(timeDuration.day - 1, 0)
+
+                    # sub-day remainder
+                    rest = (relativedelta(hours=max(timeDuration.hour - 1, 0))
+                            + relativedelta(minute=max(timeDuration.minute - 1, 0))
+                            + relativedelta(second=max(timeDuration.second - 1, 0)))
+
+                    timeBoundRight = rb - (relativedelta(days=num_days) + rest)
+
+            # test record against time bounds
+            if timeBounds is not None:
+                if (timeBounds[it.index, 0] > tSteps[it.index]) or \
+                   (timeBoundRight          < tSteps[it.index]):
+                    itRc = 'FAILED (record not in bounds)'
+                    rc = 1
+                if nRecord is not None:
+                    if timeBoundRight < nRecord:
+                        itRc = 'FAILED (gap in right bound)'
+                        rc = 1
+                    if timeBoundRight > nRecord:
+                        itRc = 'FAILED (overlap in right bound)'
+                        rc = 1
+                if itRecStatus is not None:
+                    itRc = itRc + ' [status=' + itRecStatus + ']'
+                    itRecStatus = None
+                print(f"{'':<8}{it.index+1: >3} {tSteps[it.index]} "
+                      f"[{timeBounds[it.index,0].isoformat()}, {timeBounds[it.index,1].isoformat()}]"
+                      f" -> {itRc}")
+
+                # test coverage continuity
+                if prevTimeEnd is not None:
+                    timeDiff = (timeBounds[it.index, 0] - prevTimeEnd).total_seconds()
+                    if timeDiff > 0.:
+                        rc = 1
+                        print(f"{'':<8}{RC_ERR} gap in time coverage {timeDiff} seconds")
+                    elif timeDiff < 0.:
+                        rc = 1
+                        print(f"{'':<8}{RC_ERR} overlap in time coverage {timeDiff} seconds")
+
+            # test record against expected resolution (no bounds available)
+            elif expResolution is not None:
+                timeDiff = itRecord - tSteps[it.index]
+                if timeDiff.total_seconds() > 0.:
+                    itRc = 'FAILED'
+                    rc = 1
+                if itRecStatus is not None:
+                    itRc = itRc + ' [status=' + itRecStatus + ']'
+                    itRecStatus = None
+                if timeDiff.total_seconds() == 0.:
+                    print(f"{'':<8}{it.index+1: >3} {tSteps[it.index]} -> {itRc}")
+                else:
+                    print(f"{'':<8}{it.index+1: >3} {tSteps[it.index]} expected {itRecord} -> {itRc}")
+
+            # bare record listing (neither bounds nor resolution available)
+            else:
+                if tSteps[it.index] is None:
+                    itRc = 'FAILED'
+                if itRecStatus is not None:
+                    itRc = itRc + ' [status=' + itRecStatus + ']'
+                print(f"{'':<8}{it.index+1: >3} {tSteps[it.index]} -> {itRc}")
+
+            if timeBounds is not None and timeBoundRight is not None:
+                prevTimeEnd = timeBoundRight
+
+            it.iternext()
+
+        return rc
+
+
+    def _checkTimeCoverage(self, tSteps, timeBounds, timeBoundsKey) -> tuple:
+        """Check time_coverage_start and time_coverage_end global attributes.
+
+        Validates both against the first/last decoded time records and, where
+        applicable, against the first/last time bounds.
+
+        Returns (rc, timeCoverStart, timeCoverEnd).
+        """
+        rc = 0
+        ds = self.Dataset
+        timeCoverStart = None
+        timeCoverEnd   = None
+
+        if hasattr(ds, "time_coverage_start"):
+            try:
+                t = num2date(0, "days since {}".format(ds.time_coverage_start))
+                if isinstance(t, datetime.datetime):
+                    t = t.replace(tzinfo=pytz.utc, microsecond=0)
+                timeCoverStart = t
+            except ValueError:
+                print(f"{'':<8}{RC_ERR} Unexpected time format: '{ds.time_coverage_start}'")
+            else:
+                if timeCoverStart > tSteps[0]:
+                    print(f"{'':<8}{RC_ERR} first time record '{tSteps[0].isoformat()}' "
+                          f"not within time_coverage_start attribute: '{timeCoverStart.isoformat()}'")
+                    rc = 1
+                if timeBounds is not None and timeCoverStart != timeBounds[0, 0]:
+                    print(f"{'':<8}{RC_ERR} time bound [0,0] is not matching "
+                          f"time_coverage_start attribute: '{timeCoverStart.isoformat()}'")
+                    rc = 1
+
+        if hasattr(ds, "time_coverage_end"):
+            try:
+                t = num2date(0, "days since {}".format(ds.time_coverage_end))
+                if isinstance(t, datetime.datetime):
+                    t = t.replace(tzinfo=pytz.utc, microsecond=0)
+                timeCoverEnd = t
+            except ValueError:
+                print(f"{'':<8}{RC_ERR} Unexpected time format: {ds.time_coverage_end}")
+            else:
+                if timeCoverEnd < tSteps[-1]:
+                    print(f"{'':<8}{RC_ERR} last time record '{tSteps[-1].isoformat()}' "
+                          f"not within time_coverage_end attribute: '{timeCoverEnd.isoformat()}'")
+                    rc = 1
+                if (timeBounds is not None and timeBoundsKey != 'climatology'
+                        and timeCoverEnd != timeBounds[-1, 1]):
+                    print(f"{'':<8}{RC_ERR} time bound [-1,1] is not matching "
+                          f"time_coverage_end attribute: '{timeCoverEnd.isoformat()}'")
+                    rc = 1
+
+        return rc, timeCoverStart, timeCoverEnd
+
+
+    def _checkCoordinatesTime(self, timeC, expClimate=False, expRecords=None, expResolution=None, recordStatus=None):
+        """
+        Check time coordinates of a netcdf file.
+        """
+
+        rc = 0
+        ds = self.Dataset
+
+        if recordStatus is None:
+            recordStatus = {}
+
+        timeDuration = (decode_timeDuration(ds.time_coverage_duration)
+                        if hasattr(ds, "time_coverage_duration") else None)
+
+        # validate axis, climatology, and units attributes
+        axis_rc, tUnits, sinceYr, calendar = self._checkTimeAxis(timeC, expClimate)
+        rc = axis_rc
+
+        # decode time steps (only when units are valid)
+        tSteps = None
+        if axis_rc <= 0:
+            tSteps, step_rc = self._decodeTimeSteps(timeC, sinceYr, calendar)
+            if step_rc:
+                rc = 1
+
+        # check filename-derived time and record count
+        decode = re.match(CMSAF_NAMING_STANDARD, self.File)
+        try:
+            timeStepFn = datetime.datetime.strptime(self.File[5:17], "%Y%m%d%H%M")
+            timeStepFn = timeStepFn.replace(tzinfo=pytz.utc)
+        except ValueError:
+            timeStepFn = None
+
+        if tSteps is not None:
+            if decode is not None and not ds.isSwathData():
+                if timeStepFn is not None and decode.group(9) == "002" and decode.group(1) == "UTH":
+                    timeStepFn = timeStepFn - datetime.timedelta(minutes=30)
+                if timeStepFn is not None and timeStepFn != tSteps[0]:
+                    print(f"{'':<8}{RC_ERR} time record mismatch, expecting {timeStepFn.isoformat()} as first record")
+                    rc = 1
+            else:
+                if timeStepFn is not None and tSteps[0] is not None and timeStepFn > tSteps[0]:
+                    print(f"{'':<8}{RC_ERR} time record mismatch, expecting {timeStepFn.isoformat()} before first record")
+                    rc = 1
+
+            if expRecords is not None and expRecords != tSteps.size:
+                print(f"{'':<8}{RC_ERR} Expecting {expRecords} records but found {tSteps.size}.")
+                rc = 1
+
+        # decode and validate time bounds
+        timeBoundsKey, timeBounds, bounds_rc = self._decodeTimeBounds(timeC, tUnits, sinceYr, calendar)
+        if bounds_rc:
+            rc = 1
+
+        # per-record checks and time coverage attributes
+        timeCoverStart = None
+        timeCoverEnd   = None
         if tSteps is not None:
             print("")
-            prevTimeEnd    = None
-            timeBoundRight = None
-            itRecord       = tSteps[0]
-            nRecord        = None
-            it             = np.nditer(tSteps, flags=['c_index','refs_ok'])
-            while not it.finished:
-                itRc = 'OK'
-                itRecStatus = None
+            rec_rc = self._checkTimeRecords(tSteps, timeBounds, timeBoundsKey,
+                                            timeDuration, expResolution, recordStatus, timeC)
+            if rec_rc:
+                rc = 1
 
-                # update current expected record
-                if nRecord is not None:
-                    itRecord = nRecord
-
-                # next expected record
-                if expResolution is not None:
-                    nRecord = itRecord
-                    if expResolution.year > 0:
-                        nRecord = nRecord.replace(year=nRecord.year+expResolution.year)
-                    if expResolution.month > 0:
-                        nm = nRecord.month + expResolution.month
-                        ny = nRecord.year
-                        if nm > 12:
-                            ny += 1
-                            nm -= 12
-                        nRecord = nRecord.replace(year=ny,month=nm)
-                    tr = datetime.timedelta(days=expResolution.day, hours=expResolution.hour, minutes=expResolution.minute, seconds=expResolution.second)
-                    nRecord += tr
-
-                    # add one day during a leap year for last feb pentad period
-                    if expResolution.day == 5:
-                        if nRecord.timetuple().tm_yday == 61 and cal.isleap(nRecord.year):
-                            nRecord += datetime.timedelta(days=1)
-
-                # decode matching record status
-                rsKey = os.path.join(timeC.group().path, 'record_status')
-                if rsKey in recordStatus.keys():
-                    rsItem = recordStatus[rsKey]
-                    if len(rsItem["var"].shape) == 0:
-                        recordStatusValC  = rsItem["val"][0]
-                        recordStatusMaskC = rsItem["mask"][0]
-                    else:
-                        recordStatusValC  = rsItem["val"][it.index]
-                        recordStatusMaskC = rsItem["mask"][it.index]
-
-                    if not recordStatusMaskC and recordStatusValC in rsItem["dict"]:
-                        itRecStatus = rsItem["dict"][recordStatusValC]
-                    else:
-                        rc = 1
-                        print(f"{'':<8}{RC_ERR} invalid record_status value [{recordStatusValC}]")
-                        itRecStatus = None
-
-                # define timeBoundRight and adjust if climatology is defined
-                if timeBounds is not None:
-                    timeBoundRight = timeBounds[it.index,1]
-                    if timeBoundsKey == 'climatology' and timeDuration is not None:
-                        lb = timeBounds[it.index,0]
-                        lb = datetime.datetime(year=lb.year, month=lb.month, day=lb.day,
-                                hour=lb.hour, minute=lb.minute, second=lb.second)
-                        rb = timeBounds[it.index,1]
-                        rb = datetime.datetime(year=rb.year, month=rb.month, day=rb.day,
-                                hour=rb.hour, minute=rb.minute, second=rb.second)
-                        num_days = 0
-
-                        # years
-                        if timeDuration.year > 1:
-                            et = lb + relativedelta(years=timeDuration.year-1)
-                            num_days = (et-lb).days
-                            if cal.isleap(et.year) and (rb-et).days==29:
-                                num_days += 1
-
-                        # months
-                        if timeDuration.month > 0:
-                            et = lb + relativedelta(months=timeDuration.month-1)
-                            num_days = (et-lb).days + cal.monthrange(et.year, et.month)[1] - 1
-
-                        # days
-                        num_days += max(timeDuration.day-1, 0)
-
-                        # less than a day
-                        rest = (relativedelta(hours=max(timeDuration.hour-1, 0))
-                                 + relativedelta(minute=max(timeDuration.minute-1, 0))
-                                 + relativedelta(second=max(timeDuration.second-1, 0)))
-
-                        timeBoundRight  = rb - (relativedelta(days=num_days) + rest)
-
-                # test time records against time bounds
-                if timeBounds is not None:
-                    if (timeBounds[it.index,0] > tSteps[it.index]) or \
-                       ( timeBoundRight        < tSteps[it.index]):
-                        itRc = 'FAILED (record not in bounds)'
-                        rc = 1
-                    if nRecord is not None:
-                        if timeBoundRight < nRecord:
-                            itRc = 'FAILED (gap in right bound)'
-                            rc = 1
-                        if timeBoundRight > nRecord:
-                            itRc = 'FAILED (overlap in right bound)'
-                            rc = 1
-                    if itRecStatus is not None:
-                        itRc = itRc + ' [status='+itRecStatus+']'
-                        itRecStatus = None
-                    print(f"{'':<8}{it.index+1: >3} {tSteps[it.index]} [{timeBounds[it.index,0].isoformat()}, {timeBounds[it.index,1].isoformat()}] -> {itRc}")
-
-                    # test coverage
-                    if prevTimeEnd is not None:
-                        timeDiff = timeBounds[it.index,0] - prevTimeEnd
-                        timeDiff = timeDiff.total_seconds()
-                        if timeDiff > 0.:
-                            itRc = 'FAILED'
-                            rc = 1
-                            print(f"{'':<8}{RC_ERR} gap in time coverage {timeDiff} seconds")
-                        elif timeDiff < 0.:
-                            itRc = 'FAILED'
-                            rc = 1
-                            print(f"{'':<8}{RC_ERR} overlap in time coverage {timeDiff} seconds")
-
-                # test time records against file name time resolution
-                elif expResolution is not None:
-                    itRc = 'OK'
-                    timeDiff = itRecord - tSteps[it.index]
-                    if timeDiff.total_seconds() > 0.:
-                        itRc = 'FAILED'
-                        rc = 1
-                    if itRecStatus is not None:
-                        itRc = itRc + ' [status='+itRecStatus+']'
-                        itRecStatus = None
-                    if timeDiff.total_seconds() == 0.:
-                        print(f"{'':<8}{it.index+1: >3} {tSteps[it.index]} -> {itRc}")
-                    else:
-                        print(f"{'':<8}{it.index+1: >3} {tSteps[it.index]} expected {itRecord} -> {itRc}")
-
-                else:
-                    itRc = 'OK'
-                    if tSteps[it.index] is None:
-                        itRc = 'FAILED'
-                    if itRecStatus is not None:
-                        itRc = itRc + ' [status='+itRecStatus+']'
-                    print(f"{'':<8}{it.index+1: >3} {tSteps[it.index]} -> {itRc}")
-
-                if timeBounds is not None and timeBoundRight is not None:
-                    prevTimeEnd = timeBoundRight
-
-                it.iternext()
-
-            # test time coverage range start
-            if hasattr(ds,"time_coverage_start"):
-                try:
-                    t = num2date(0, "days since {}".format(ds.time_coverage_start))
-                    if isinstance(t, datetime.datetime):
-                        t = t.replace(tzinfo=pytz.utc, microsecond=0)
-                    timeCoverStart = t
-                except ValueError:
-                    print(f"{'':<8}{RC_ERR} Unexpected time format: '{ds.time_coverage_start}'")
-                else:
-                    if timeCoverStart > tSteps[0]:
-                        print(f"{'':<8}{RC_ERR} first time record '{tSteps[0].isoformat()}' not within time_coverage_start attribute: '{timeCoverStart.isoformat()}'")
-                        rc = 1
-                    if (timeBounds is not None) and (timeCoverStart != timeBounds[0,0]):
-                        print(f"{'':<8}{RC_ERR} time bound [0,0] is not matching time_coverage_start attribute: '{timeCoverStart.isoformat()}'")
-                        rc = 1
-
-            # test time coverage range
-            if hasattr(ds,"time_coverage_end"):
-                try:
-                    t = num2date(0, "days since {}".format(ds.time_coverage_end))
-                    if isinstance(t, datetime.datetime):
-                        t = t.replace(tzinfo=pytz.utc, microsecond=0)
-                    timeCoverEnd = t
-                except ValueError:
-                    print(f"{'':<8}{RC_ERR} Unexpected time format: {ds.time_coverage_end}")
-                else:
-                    if timeCoverEnd < tSteps[-1]:
-                        print(f"{'':<8}{RC_ERR} last time record '{tSteps[-1].isoformat()}' not within time_coverage_end attribute: '{timeCoverEnd.isoformat()}'")
-                        rc = 1
-                    if (timeBounds is not None) and (timeBoundsKey != 'climatology') and timeCoverEnd != timeBounds[-1,1]:
-                        print(f"{'':<8}{RC_ERR} time bound [-1,1] is not matching time_coverage_end attribute: '{timeCoverEnd.isoformat()}'")
-                        rc = 1
+            cov_rc, timeCoverStart, timeCoverEnd = self._checkTimeCoverage(
+                tSteps, timeBounds, timeBoundsKey)
+            if cov_rc:
+                rc = 1
 
             print(f"\n{'':<8}first time record: {tSteps[0].isoformat()}")
             print(f"{'':<8}last  time record: {tSteps[-1].isoformat()}")
