@@ -1838,6 +1838,10 @@ class CMSAFChecker:
         timeBoundsVar = None
         timeBounds    = None
 
+        if tUnits is None or sinceYr is None:
+            print(f"{'':<8}{RC_ERR} cannot decode time bounds: time units are invalid")
+            return timeBoundsKey, None, 1
+
         if hasattr(timeC, "climatology"):
             timeBoundsKey = 'climatology'
 
@@ -2172,8 +2176,13 @@ class CMSAFChecker:
                 print(f"{'':<8}{RC_ERR} Expecting {expRecords} records but found {tSteps.size}.")
                 rc = 1
 
-        # decode and validate time bounds
-        timeBoundsKey, timeBounds, bounds_rc = self._decodeTimeBounds(timeC, tUnits, sinceYr, calendar)
+        # decode and validate time bounds (only when units are valid)
+        timeBoundsKey, timeBounds, bounds_rc = 'bounds', None, 0
+        if axis_rc <= 0:
+            timeBoundsKey, timeBounds, bounds_rc = self._decodeTimeBounds(
+                timeC, tUnits, sinceYr, calendar)
+        else:
+            print(f"{'':<8}{RC_INFO} skipping time bounds check: time units are invalid")
         if bounds_rc:
             rc = 1
 
