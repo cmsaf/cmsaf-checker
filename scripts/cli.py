@@ -280,6 +280,33 @@ class Keywords:
         return kwList
 
 
+def _attributes_equal(ar, ac) -> bool:
+    """Return True if two NetCDF attribute values are equal.
+
+    Handles the three cases that arise in practice:
+      - str           — plain equality
+      - np.ndarray    — element-wise via np.array_equal, NaN-aware for floats
+      - scalar numeric (np.float32/64, np.int*, etc.) — NaN-aware where applicable
+    """
+    if isinstance(ar, str):
+        return ar == ac
+    if isinstance(ar, np.ndarray):
+        if np.issubdtype(ar.dtype, np.floating):
+            nan_r, nan_c = np.isnan(ar), np.isnan(ac)
+            if not np.array_equal(nan_r, nan_c):
+                return False
+            return np.array_equal(ar[~nan_r], ac[~nan_c])
+        return np.array_equal(ar, ac)
+    # scalar numeric — guard np.isnan with try/except since it raises
+    # TypeError for integer types
+    try:
+        if np.isnan(ar) and np.isnan(ac):
+            return True
+    except (TypeError, ValueError):
+        pass
+    return bool(ar == ac)
+
+
 def _is_coordinate_variable(var) -> bool:
     """Return True if *var* is a CF coordinate variable.
 
@@ -1011,25 +1038,14 @@ class CMSAFChecker:
                     print(f"{RC_INFO} changing attribute {attNameFull} :: '{getattr(new,attName)}'")
                     continue
 
-                    # test if attributes are identical
-                    ar = getattr(ref, vAttName)
-                    ac = getattr(new. vAttName)
-                    if type(ar) == np.ndarray or type(ar) == np.float32 or type(ar) == np.float64:
-                        if np.isnan(ar).all() and np.isnan(ac).all():
-                            tmp = np.array([])
-                        elif np.isnan(ar).any() or np.isnan(ac).any():
-                            tmp = np.array([1])
-                        else:
-                            tmp = np.where(np.absolute(ar-ac) > 0)[0]
-                        if len(tmp) > 0:
-                            print(f"{RC_ERR} attribute '{attNameFull}' differ")
-                            print(f"{'':<4}{attNameFull} :: expecting '{ar}', found '{ac}'")
-                            rc = 1
-                    else:
-                        if ar != ac:
-                            print(f"{RC_ERR} attribute '{attNameFull}' differ")
-                            print(f"{'':<4}{attNameFull} ::  expecting '{ar}', found '{ac}'")
-                            rc = 1
+                # test if attributes are identical
+                else:
+                    ar = getattr(ref, attName)
+                    ac = getattr(new, attName)
+                    if not _attributes_equal(ar, ac):
+                        print(f"{RC_ERR} attribute '{attNameFull}' differ")
+                        print(f"{'':<4}{attNameFull} :: expecting '{ar}', found '{ac}'")
+                        rc = 1
 
         # check for new attributes
         for attName in new.ncattrs():
