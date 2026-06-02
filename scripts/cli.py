@@ -948,8 +948,6 @@ class CMSAFChecker:
         """
         check global metadata against CM SAF standard
         """
-        rc = 1
-
         # check global attributes
         rc = self._checkGlobalAttributes()
 
@@ -1089,8 +1087,6 @@ class CMSAFChecker:
         join=or / join=and evaluation.  Updates self.err/warn/info counters
         and their Attr lists directly; does not return a value.
         """
-        ds = self.Dataset
-
         # --- type check ---
         attr_type = type(attr)
         if attr_type == type(np.array([])):
@@ -1409,9 +1405,6 @@ class CMSAFChecker:
                     print(f"## ref='{vr.shape}', file='{vc.shape}'")
                     rc = 1
 
-                # track global attributes
-                vAttCheck = {}
-
                 # check variable attributes
                 if self._checkReferenceAttributes(vc, vr, varName, ignore=ignore) > 0:
                     rc = 1
@@ -1577,7 +1570,6 @@ class CMSAFChecker:
             item = tmp[key]
             recordStatus[key] = { "var": item, "dict": None, "val": None, "mask": None, "time": None, }
 
-            itemPath = os.path.dirname(key)
             if hasattr(item,'flag_meanings') and hasattr(item,'flag_values'):
                 recordStatus[key]["dict"] = dict(zip(item.flag_values,item.flag_meanings.split(" ")))
                 recordStatus[key]["val"]  = item[:]
