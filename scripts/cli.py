@@ -1592,10 +1592,16 @@ class CMSAFChecker:
                         t = datetime.datetime.strptime(t.isot, "%Y-%m-%dT%H:%M:%S.%f")
                         timeBounds[it.multi_index] = t.replace(tzinfo=pytz.utc)
                     else:
-                        t = num2date(it[0], tUnits, calendar=calendar)
-                        if isinstance(t, datetime.datetime):
-                            t = t.replace(tzinfo=pytz.utc)
-                        timeBounds[it.multi_index] = t
+                        try:
+                            t = num2date(it[0], tUnits, calendar=calendar)
+                            if isinstance(t, datetime.datetime):
+                                t = t.replace(tzinfo=pytz.utc)
+                            timeBounds[it.multi_index] = t
+                        except OverflowError:
+                            print(f"{'':<8}{RC_ERR} Invalid time bound record value: {it[0]}")
+                            timeBounds = None
+                            rc = 1
+                            break
                     it.iternext()
 
             # check if time bounds are required
