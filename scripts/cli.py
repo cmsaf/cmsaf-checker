@@ -2201,8 +2201,8 @@ class CMSAFChecker:
 
             # test flags
             if hasattr(var,'flag_values') and hasattr(var,'flag_meanings'):
-                flagV = var.flag_values
-                flagM = var.flag_meanings.split(" ")
+                flagV = np.atleast_1d(var.flag_values)
+                flagM = np.atleast_1d(var.flag_meanings.split(" "))
                 if len(flagV) != len(flagM):
                     rc = 1
                     print(f"{'':<4}{RC_ERR} {vName} :: mismatch between flag_values and flag_value")
