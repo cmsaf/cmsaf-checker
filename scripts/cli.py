@@ -1882,10 +1882,16 @@ class CMSAFChecker:
                         t = datetime.datetime.strptime(t.isot, "%Y-%m-%dT%H:%M:%S.%f")
                         timeBounds[it.multi_index] = t.replace(tzinfo=pytz.utc)
                     else:
-                        t = num2date(it[0], tUnits, calendar=calendar)
-                        if isinstance(t, datetime.datetime):
-                            t = t.replace(tzinfo=pytz.utc)
-                        timeBounds[it.multi_index] = t
+                        try:
+                            t = num2date(it[0], tUnits, calendar=calendar)
+                            if isinstance(t, datetime.datetime):
+                                t = t.replace(tzinfo=pytz.utc)
+                            timeBounds[it.multi_index] = t
+                        except OverflowError:
+                            print(f"{'':<8}{RC_ERR} Invalid time bound record value: {it[0]}")
+                            timeBounds = None
+                            rc = 1
+                            break
                     it.iternext()
 
             # determine whether missing bounds (shape error) constitute an error
@@ -2580,8 +2586,8 @@ class CMSAFChecker:
 
             # test flags
             if hasattr(var,'flag_values') and hasattr(var,'flag_meanings'):
-                flagV = var.flag_values
-                flagM = var.flag_meanings.split(" ")
+                flagV = np.atleast_1d(var.flag_values)
+                flagM = np.atleast_1d(var.flag_meanings.split(" "))
                 if len(flagV) != len(flagM):
                     rc = 1
                     print(f"{'':<4}{RC_ERR} {vName} :: mismatch between flag_values and flag_value")

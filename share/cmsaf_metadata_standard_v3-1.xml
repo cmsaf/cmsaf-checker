@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <cmsaf_metadata_standard xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
    <version_number>3.1.1</version_number>
-   <last_modified>2026-05-18</last_modified>
+   <last_modified>2026-06-08</last_modified>
    <institution>CM SAF</institution>
    <contact>contact.cmsaf@dwd.de</contact>
 
@@ -181,6 +181,7 @@
    </entry>
 
    <entry id="history" type="s" required="no">
+     <regex>^.+$</regex>
    </entry>
 
    <entry id="date_modified" type="s" required="no">
