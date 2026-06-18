@@ -14,7 +14,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import pytz
 
-__version__ = "3.2.6"
+__version__ = "3.2.7"
 __prefix__  = ""
 STANDARD = ''
 
@@ -1998,7 +1998,7 @@ class CMSAFChecker:
                     print(f"{'':<8}{RC_ERR} {longName} values not within bounds")
 
                 # test for gaps in coordinate bounds
-                tmp = np.subtract(boundsVar[0:-2,1],boundsVar[1:-1,0])
+                tmp = np.subtract(bounds[0:-2,1],bounds[1:-1,0])
                 indx = np.where(tmp > 0)[0]
                 if len(indx) > 0:
                     rc = 1
@@ -2014,11 +2014,11 @@ class CMSAFChecker:
                 if geoMinAttr is not None:
                     if geoMinAttr != bounds[0,0]:
                         rc = 1
-                        print(f"{'':<8}{RC_ERR} mismatch between {leftMaxName} {longName} bound '{boundsVar[0,0]}' and {geoMinAttrName} '{geoMinAttr}'")
+                        print(f"{'':<8}{RC_ERR} mismatch between {leftMaxName} {longName} bound '{bounds[0,0]}' and {geoMinAttrName} '{geoMinAttr}'")
                 if geoMaxAttr is not None:
                     if geoMaxAttr != bounds[-1,1]:
                         rc = 1
-                        print(f"{'':<8}{RC_ERR} mismatch between {rightMaxName} {longName} bound '{boundsVar[-1,1]}' and {geoMaxAttrName} '{geoMaxAttr}'")
+                        print(f"{'':<8}{RC_ERR} mismatch between {rightMaxName} {longName} bound '{bounds[-1,1]}' and {geoMaxAttrName} '{geoMaxAttr}'")
 
             # print result
             if coordRes is not None:
