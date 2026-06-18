@@ -606,7 +606,8 @@ class CMSAFChecker:
     """
 
     def __init__(self, search_paths=None, version=None, referenceFile=None,
-        coordinates=False, ignore=None, lazy=False, standard_file=None):
+        coordinates=False, ignore=None, lazy=False, standard_file=None,
+        ref_checks=None):
 
         self.search_paths  = search_paths or []
         self.standard_file = standard_file
@@ -619,12 +620,30 @@ class CMSAFChecker:
         self.std_name_dh   = None
         self.gIgnoreAtt    = []
         self.vIgnoreAtt    = []
+        self.ignoreVar     = set()   # coordinate variable names to skip data comparison
         self.err = 0
         self.errAttr = []
         self.warn = 0
         self.warnAttr = []
         self.info = 0
         self.infoAttr = []
+
+        # Which sub-checks to run when comparing against a reference file.
+        # Accepted tokens: 'meta', 'coords', 'data', 'all'.
+        # 'all' (or an empty / None value) expands to the full set.
+        _valid_tokens = {'meta', 'coords', 'data', 'all'}
+        _all_checks   = frozenset({'meta', 'coords', 'data'})
+        if ref_checks is None or ref_checks == {'all'}:
+            self.ref_checks = _all_checks
+        else:
+            unknown = ref_checks - _valid_tokens
+            if unknown:
+                raise ValueError(
+                    f"Unknown --check token(s): {', '.join(sorted(unknown))}. "
+                    f"Valid tokens are: {', '.join(sorted(_valid_tokens))}."
+                )
+            self.ref_checks = (_all_checks if 'all' in ref_checks
+                               else frozenset(ref_checks))
         if version:
             self.version = "_v"+version.replace(".","-")
         else:
@@ -645,7 +664,9 @@ class CMSAFChecker:
         if ignore is not None:
             attList = ignore.split(",")
             for att in attList:
-                if att.find('@') >= 0:
+                if att.startswith('var:'):
+                    self.ignoreVar.add(att[4:].strip())
+                elif att.find('@') >= 0:
                     self.vIgnoreAtt.append(att)
                 else:
                     self.gIgnoreAtt.append(att)
@@ -759,12 +780,12 @@ class CMSAFChecker:
         # test against reference
         try:
             if self.refDataset is not None:
-                print(f"\n{'':=^80}\n>>> checking metadata reference file\n{'':=^80}")
+                print(f"\n{'':=^80}\n>>> checking reference file\n{'':=^80}")
                 rc = self._checkReferenceFile()
                 if rc == 0:
-                    print(f"\n{RC_OK} <<< metadata reference file")
+                    print(f"\n{RC_OK} <<< reference file")
                 else:
-                    print(f"\n{RC_FAIL} <<< metadata reference file")
+                    print(f"\n{RC_FAIL} <<< reference file")
             else:
                 print(f"\n{'':=^80}\n>>> checking metadata standard\n{'':=^80}")
                 rc = self._checkStandard()
@@ -1364,17 +1385,73 @@ class CMSAFChecker:
         return rc
 
 
-    def _checkReferenceVariables(self, new, ref):
+    # Maximum number of differing positions shown in coordinate data comparisons.
+    _MAX_COORD_DIFF_SHOWN = 5
+
+    def _checkCoordVariableData(self, varName: str, vc, vr) -> int:
+        """Compare the data values of a coordinate variable against the reference.
+
+        Both masked and unmasked arrays are handled.  NaN values are treated as
+        equal to NaN (they are valid fill sentinels in floating-point coordinates).
+        Up to _MAX_COORD_DIFF_SHOWN differing positions are printed so the user
+        can diagnose the nature of any discrepancy without being flooded.
+
+        Returns 0 if all values match, 1 otherwise.
         """
-        check all variables in group against refence file
+        ar = np.ma.filled(vr[:], fill_value=np.nan)
+        ac = np.ma.filled(vc[:], fill_value=np.nan)
+
+        # NaN-aware element-wise comparison; works for both float and integer dtypes
+        # (np.isnan on integer arrays is harmless — it always returns False)
+        try:
+            equal = np.isnan(ar) & np.isnan(ac)
+        except (TypeError, ValueError):
+            equal = np.zeros(ar.shape, dtype=bool)
+        equal |= (ar == ac)
+
+        diff_indices = np.flatnonzero(~equal)
+        if len(diff_indices) == 0:
+            return 0
+
+        print(f"{RC_ERR} data values of coordinate '{varName}' differ "
+              f"at {len(diff_indices)} of {ar.size} position(s)")
+        for flat_idx in diff_indices[:self._MAX_COORD_DIFF_SHOWN]:
+            idx = np.unravel_index(flat_idx, ar.shape)
+            idx_str = flat_idx if ar.ndim == 1 else idx
+            print(f"    [{idx_str}]: ref={ar[idx]!r}  file={ac[idx]!r}")
+        if len(diff_indices) > self._MAX_COORD_DIFF_SHOWN:
+            print(f"    ... and {len(diff_indices) - self._MAX_COORD_DIFF_SHOWN} more")
+        return 1
+
+    def _checkReferenceVariables(self, new, ref, coord_filter=None):
+        """
+        Check all variables in group against reference file.
+
+        coord_filter controls which variables are checked:
+          None / 'all' — check every variable (default)
+          'coords'     — check only CF coordinate variables
+          'data'       — check only non-coordinate variables
+
+        For coordinate variables the data values are compared in addition to
+        the dtype, shape and attributes.
         """
         rc = 0
         varCheck = {}
 
         # compare variables from reference file
         for varName in ref.variables:
+            vr = ref.variables[varName]
+
+            # apply coordinate / data filter
+            if coord_filter == 'coords' and not _is_coordinate_variable(vr):
+                varCheck[varName] = 1   # mark as seen so the "new variable" check stays consistent
+                continue
+            if coord_filter == 'data' and _is_coordinate_variable(vr):
+                varCheck[varName] = 1
+                continue
+
             # test if variable exists
-            if not varName in new.variables:
+            if varName not in new.variables:
                 print(f"{RC_ERR} missing variable :: '{varName}'")
                 rc = 1
             else:
@@ -1382,7 +1459,6 @@ class CMSAFChecker:
                 varCheck[varName] = 1
 
                 # define variables
-                vr = ref.variables[varName]
                 vc = new.variables[varName]
 
                 # list of attributes to ignore
@@ -1390,7 +1466,7 @@ class CMSAFChecker:
                 for item in self.vIgnoreAtt:
                     if item.find('@') >= 0:
                         itemList = item.split("@")
-                        if itemList[0] == varName or len(itemList[0]) == 0 :
+                        if itemList[0] == varName or len(itemList[0]) == 0:
                             ignore.append(itemList[1])
 
                 # check data type
@@ -1400,7 +1476,8 @@ class CMSAFChecker:
                     rc = 1
 
                 # check array shape
-                if not self.refDataset.isSwathData() and vr.shape != vc.shape:
+                shapes_match = self.refDataset.isSwathData() or vr.shape == vc.shape
+                if not shapes_match:
                     print(f"{RC_ERR} shape of variable '{varName}' differs from reference.")
                     print(f"## ref='{vr.shape}', file='{vc.shape}'")
                     rc = 1
@@ -1409,9 +1486,21 @@ class CMSAFChecker:
                 if self._checkReferenceAttributes(vc, vr, varName, ignore=ignore) > 0:
                     rc = 1
 
-        # check for new variables
+                # for coordinate variables, compare data values element-by-element
+                if _is_coordinate_variable(vr) and shapes_match:
+                    if varName in self.ignoreVar:
+                        print(f"{RC_INFO} skipping data comparison for coordinate '{varName}' (ignored)")
+                    elif self._checkCoordVariableData(varName, vc, vr) > 0:
+                        rc = 1
+
+        # check for new variables (only for variables not skipped by the filter)
         for varName in new.variables:
-            if not varName in varCheck:
+            if varName not in varCheck:
+                vn = new.variables[varName]
+                if coord_filter == 'coords' and not _is_coordinate_variable(vn):
+                    continue
+                if coord_filter == 'data' and _is_coordinate_variable(vn):
+                    continue
                 print(f"{RC_ERR} new variable '{varName}'")
                 rc = 1
 
@@ -1421,57 +1510,89 @@ class CMSAFChecker:
     def _checkReferenceFile(self):
         """
         Check metadata from a file against a reference file.
+
+        Which sub-checks are run is controlled by self.ref_checks (a frozenset
+        containing any combination of 'meta', 'coords', 'data').  The default
+        is all three.  Omitting a token skips the corresponding section and
+        prints an INFORMATION message so the user knows it was intentional.
         """
 
         rc = 0
+        checks = self.ref_checks
 
-        # get file name
-        fn = os.path.realpath(self.Dataset.filepath())
-        fn = os.path.basename (fn)
+        # ------------------------------------------------------------------ #
+        # meta — global attributes and group attributes                        #
+        # ------------------------------------------------------------------ #
+        if 'meta' in checks:
+            print("global attributes")
+            grpCheck = {}
 
-        # process global attributes
-        print("global attributes")
+            rc_meta = self._checkReferenceAttributes(self.Dataset, self.refDataset, "/")
 
-        # track global attributes
-        grpCheck = {}
+            print("\ngroup attributes")
+            for grpName in self.refDataset.groups:
+                if grpName in self.Dataset.groups:
+                    rc_meta += self._checkReferenceAttributes(
+                        self.Dataset.groups[grpName], self.refDataset.groups[grpName], grpName
+                    )
+                    grpCheck[grpName] = 1
+                else:
+                    print(f"{RC_ERR} missing group '{grpName}'")
+                    rc_meta = 1
 
-        # check root group attributes
-        rc = self._checkReferenceAttributes(self.Dataset, self.refDataset, "/")
+            for grpName in self.Dataset.groups:
+                if grpName not in grpCheck:
+                    print(f"{RC_ERR} new group '{grpName}'")
+                    rc_meta = 1
 
-        # check group attributes
-        print("\ngroup attributes")
-        for grpName in self.refDataset.groups:
-            if grpName in self.Dataset.groups:
-                rc = self._checkReferenceAttributes(self.Dataset.groups[grpName], self.refDataset.groups[grpName], grpName)
-                grpCheck[grpName] = 1
+            if rc_meta == 0:
+                print(f"\n{RC_OK} <<< reference attributes")
             else:
-                print(f"{RC_ERR} missing group '{grpName}'")
-
-        # check for new groups
-        for grpName in self.Dataset.groups:
-            if not grpName in grpCheck:
-                print(f"{RC_ERR} new group '{grpName}'")
-                rc = 1
-
-        # print global attribute check result
-        if rc == 0:
-            print(f"\n{RC_OK} <<< reference attributes")
+                print(f"\n{RC_FAIL} <<< reference attributes")
+            rc += rc_meta
         else:
-            print(f"\n{RC_FAIL} <<< reference attributes")
-        rcAll = rc
+            print(f"{RC_INFO} skipping metadata (global/group attribute) check")
 
-        # process variables
-        print("\nvariables")
-        rc = self._checkReferenceVariables(self.Dataset, self.refDataset)
+        # ------------------------------------------------------------------ #
+        # coords and/or data — variables                                       #
+        # ------------------------------------------------------------------ #
+        run_coords = 'coords' in checks
+        run_data   = 'data'   in checks
 
-        # print result
-        if rc == 0:
-            print(f"\n{RC_OK} <<< variables")
+        if run_coords or run_data:
+            print("\nvariables")
+            if run_coords and run_data:
+                # both requested — check all variables at once (original behaviour)
+                rc_vars = self._checkReferenceVariables(self.Dataset, self.refDataset)
+                if rc_vars == 0:
+                    print(f"\n{RC_OK} <<< variables")
+                else:
+                    print(f"\n{RC_FAIL} <<< variables")
+                rc += rc_vars
+            else:
+                # only one of the two was requested
+                if run_coords:
+                    print("(coordinate variables only)")
+                    rc_vars = self._checkReferenceVariables(
+                        self.Dataset, self.refDataset, coord_filter='coords')
+                    if rc_vars == 0:
+                        print(f"\n{RC_OK} <<< coordinate variables")
+                    else:
+                        print(f"\n{RC_FAIL} <<< coordinate variables")
+                    rc += rc_vars
+                if run_data:
+                    print("(data variables only)")
+                    rc_vars = self._checkReferenceVariables(
+                        self.Dataset, self.refDataset, coord_filter='data')
+                    if rc_vars == 0:
+                        print(f"\n{RC_OK} <<< data variables")
+                    else:
+                        print(f"\n{RC_FAIL} <<< data variables")
+                    rc += rc_vars
         else:
-            print(f"\n{RC_FAIL} <<< variables")
+            print(f"{RC_INFO} skipping variable check")
 
-        # return to caller
-        return rcAll + rc
+        return rc
 
 
     def _checkCoordinates(self):
@@ -2646,8 +2767,17 @@ def main():
         help='Test files using this as the reference')
     parser.add_argument('-r', '--reference',
         help='Test files using this as the reference')
+    parser.add_argument('--check',
+        default='all', metavar='CHECKS',
+        help='Comma-separated list of sub-checks to run when comparing against a '
+             'reference file (-r). Valid tokens: meta (global/group attributes), '
+             'coords (coordinate variables), data (data variables), all (default). '
+             'Example: --check meta,coords')
     parser.add_argument('-i', '--ignore_attr',
-        help='Ignore list of attributes')
+        help='Comma-separated list of items to ignore. '
+             'Global attribute: attribute name (e.g. date_created). '
+             'Variable attribute: varname@attrib (e.g. time@units). '
+             'Coordinate variable data comparison: var:varname (e.g. var:time).')
     parser.add_argument('-c', '--coordinates', action='store_true',
         help='Test coordinates time, latitude, longitude')
     parser.add_argument('-m', '--missing', nargs='?', const='filename',
@@ -2667,6 +2797,9 @@ def main():
     for i, p in enumerate(search_paths, start=ord('a')):
         print(f"CMSAF Standards path ({chr(i)}) '{p}'")
 
+    # parse --check tokens into a set
+    ref_checks = {t.strip().lower() for t in args.check.split(',')} if args.check else None
+
     # get a new checker object
     if args.reference == None:
         inst = CMSAFChecker(search_paths=search_paths, version=args.version,
@@ -2675,7 +2808,7 @@ def main():
     else:
         inst = CMSAFChecker(referenceFile=args.reference, ignore=args.ignore_attr,
             coordinates=args.coordinates, lazy=args.lazy,
-            standard_file=args.standard_file)
+            standard_file=args.standard_file, ref_checks=ref_checks)
 
     # file pattern expansion
     files = []
