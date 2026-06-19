@@ -223,6 +223,18 @@ def _parse_attribute_rule(attr_el) -> dict:
     }
 
 
+def _variable_rule_key(rule: dict) -> tuple:
+    """Override key for a <variable> rule: exact match on identification and scope.
+
+    Two variable rules are considered the "same" rule, for the purpose of a
+    child standard overriding its included base standard, only if they agree
+    on all three of match_by ('standard_name'/'name'), match_value, and scope.
+    A rule with a different scope string does not override a base rule for
+    the same standard_name/name; both are kept and checked independently.
+    """
+    return (rule['match_by'], rule['match_value'], rule['scope'])
+
+
 def _parse_standard(filename: str) -> SimpleNamespace:
     """
     Parse a CM SAF metadata standard XML file.
@@ -716,8 +728,14 @@ class CMSAFChecker:
             merged.update(self.std_name_dh.dict)
             self.std_name_dh.dict = merged
 
-            # variable rules: base first, child appends (no replacement)
-            self.std_name_dh.variables = include_.variables + self.std_name_dh.variables
+            # variable rules: a local rule overrides a base rule that shares
+            # the same (match_by, match_value, scope) key; base rules without
+            # a local override are kept, followed by all local rules (both
+            # overrides and local-only additions)
+            local_keys = {_variable_rule_key(r) for r in self.std_name_dh.variables}
+            base_variables = [r for r in include_.variables
+                               if _variable_rule_key(r) not in local_keys]
+            self.std_name_dh.variables = base_variables + self.std_name_dh.variables
 
 
     def __del__(self):
