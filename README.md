@@ -5,7 +5,7 @@ This tool is used to check data files compliance with [CM SAF agreed metadata co
 ## Usage
 
 ```
-cmsaf-checker [-h] [-s PATH] [-v VERSION] [-r REFERENCE] [-i IGNORE_ATTR] [-c] [-m [MISSING]] [-l] [-d DIRECTORY] files [files ...]
+cmsaf-checker [-h] [-s PATH] [-v VERSION] [-r REFERENCE] [-i IGNORE_ATTR] [-c] [-m [MISSING]] [-l] [-d DIRECTORY] [--norecursive] files [files ...]
 
 positional arguments:
   files
@@ -31,7 +31,14 @@ options:
   -l, --lazy            Turn some errors to warnings
   -d, --directory DIRECTORY
                         Search for files with pattern in this directory.
+  --norecursive         When used with -d/--directory, only search the
+                        given directory itself and do not descend into
+                        subdirectories.
 ```
+
+By default, `-d`/`--directory` searches recursively through all subdirectories
+of the given directory for files matching the pattern. Use `--norecursive` to
+restrict the search to the given directory only.
 
 ## Standard and keyword file search paths
 
@@ -56,7 +63,12 @@ The CM SAF metadata-conventions project provides [sample files](https://github.c
 cmsaf-checker -c TSTin20200101000000120IMPGS01GL.nc TSTdm20200101000000120IMPGS01GL.nc
 ```
 
-To check all netCDF files in the directory `foo`
+To check all netCDF files in the directory `foo`, including subdirectories
 ```
 cmsaf-checker -c -d foo "*.nc"
+```
+
+To check only the netCDF files directly in `foo`, without descending into subdirectories
+```
+cmsaf-checker -c -d foo --norecursive "*.nc"
 ```

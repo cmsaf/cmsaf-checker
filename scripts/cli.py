@@ -2804,6 +2804,9 @@ def main():
         help='Turn some errors to warnings')
     parser.add_argument('-d', '--directory',
         help='Search for files with pattern in this directory.')
+    parser.add_argument('--norecursive', action='store_true',
+        help='When used with -d/--directory, only search the given directory '
+             'itself and do not descend into subdirectories.')
     parser.add_argument('files', nargs='+')
 
     args = parser.parse_args()
@@ -2832,10 +2835,12 @@ def main():
     files = []
     if args.directory is not None:
         for root, dirs, names in os.walk(args.directory, followlinks=True):
+            if args.norecursive:
+                dirs[:] = []
+                if root != args.directory:
+                    continue
             tmp = fnmatch.filter(names, args.files[0])
             for fn in tmp:
-                if args.directory != root:
-                    continue
                 fnp=os.path.join(root,fn)
                 if os.access(fnp, os.R_OK):
                     files.append(fnp)
