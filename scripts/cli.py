@@ -14,7 +14,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import pytz
 
-__version__ = "3.3.0"
+__version__ = "3.3.1"
 __prefix__  = ""
 STANDARD = ''
 
@@ -1185,6 +1185,18 @@ class CMSAFChecker:
             print(f"{RC_ERR} {detail}")
             self.err += 1
             self.errAttr.append(key)
+
+        if std['list']:
+            empty_positions = [i + 1 for i, a in enumerate(attr_list)
+                    if a.strip().strip('"') == '']
+            if empty_positions:
+                print(f"{RC_ERR} empty element(s) in list attribute '{key}' "
+                    f"at position(s) {empty_positions} "
+                    f"(check for a trailing or doubled '{std['list']}')\n")
+                self.err += 1
+                if key not in self.errAttr:
+                    self.errAttr.append(key)
+                attr_list = [a for a in attr_list if a.strip().strip('"') != '']
 
         # join=or:  did any validator pass for any list element?
         or_passed = False
